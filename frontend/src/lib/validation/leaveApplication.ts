@@ -48,3 +48,27 @@ export const approvalSchema = z.object({
   signature_name: z.string().min(1, "Name is required"),
   signature_designation: z.string().min(1, "Designation is required"),
 });
+
+export const denySchema = z.object({
+  comments: z.string().min(1, "A reason is required to deny"),
+  signature_name: z.string().min(1, "Name is required"),
+  signature_designation: z.string().min(1, "Designation is required"),
+});
+
+// Section B2 — HR_ADMIN review.
+export const hrReviewSchema = z.object({
+  decision: z.boolean(),
+  comments: z.string().optional(),
+  signature_name: z.string().min(1, "Name is required"),
+  signature_designation: z.string().min(1, "Designation is required"),
+});
+
+export const hodReturnSchema = z.object({
+  comments: z.string().min(1, "Comments are required to return the application"),
+});
+
+export type HodRecommendationFormValues = z.infer<typeof hodRecommendationSchema>;
+export type HrReviewFormValues = z.infer<typeof hrReviewSchema>;
+export type ApprovalFormValues = z.infer<typeof approvalSchema>;
+export type DenyFormValues = z.infer<typeof denySchema>;
+export type HodReturnFormValues = z.infer<typeof hodReturnSchema>;
