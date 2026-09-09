@@ -79,6 +79,42 @@ CORS_ALLOWED_ORIGINS=https://leave.naot.go.tz
 NEXT_PUBLIC_API_BASE_URL=https://api.leave.naot.go.tz
 ```
 
+## 1a. Continuous integration
+
+GitHub Actions workflows in `.github/workflows/` run on every push and pull
+request:
+
+- **`backend-ci.yml`** — spins up a Postgres 16 service container, installs
+  `requirements.txt`, runs `python manage.py check`, a
+  `makemigrations --check --dry-run` guard against un-generated migrations,
+  applies `python manage.py migrate` against the service container (the
+  practical equivalent of a `migrate --check` gate — it fails the job if
+  migrations don't apply cleanly), then runs `pytest --cov=apps` and fails
+  the build on any test failure. A second job runs `pip-audit -r
+  requirements.txt` (informational — annotates findings, doesn't fail the
+  build; see SECURITY.md).
+- **`frontend-ci.yml`** — installs Node dependencies with `npm ci` in
+  `frontend/`, then runs `npm run lint`, `npm test -- --ci`, and `npm run
+  build`, failing on any error. A second job runs `npm audit
+  --audit-level=high`, which **does** fail the build on high/critical
+  vulnerabilities.
+- **`dependency-review.yml`** — on pull requests, runs GitHub's native
+  `dependency-review-action` to flag newly-introduced vulnerable
+  dependencies in the diff against the base branch.
+
+Together these close the "no CI dependency scanning" gap previously noted in
+SECURITY.md. Required CI env vars for the backend job (`DATABASE_URL`,
+`DJANGO_SECRET_KEY`, etc.) are set inline in the workflow using
+throwaway/test values — they are not production secrets and don't need to be
+added as repo secrets for CI to pass.
+
+Note: these workflow files were authored and locally validated for YAML
+correctness (`python -c "import yaml; yaml.safe_load(...)"`) and the
+commands they wire up (`pytest`, `npm run lint`, `npm test`, `npm run
+build`) were confirmed to run successfully directly in this repo. They have
+not yet been exercised against real GitHub Actions infrastructure — confirm
+on the first push/PR that triggers them.
+
 ## 2. Database migration steps
 
 ```bash

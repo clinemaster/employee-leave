@@ -1,0 +1,31 @@
+name: Dependency Review (PRs)
+
+# GitHub's native dependency-review-action: on a pull request, diffs the
+# dependency manifests (requirements.txt, frontend/package-lock.json) against
+# the base branch and flags newly-introduced dependencies with known
+# vulnerabilities. Complements the pip-audit / npm audit steps in
+# backend-ci.yml / frontend-ci.yml, which scan the full dependency tree on
+# every push (not just what changed in a PR).
+#
+# Note: this action requires the repository's GitHub Advisory Database
+# integration, which is only available on public repos or private repos with
+# GitHub Advanced Security enabled.
+
+on:
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

@@ -149,6 +149,27 @@ unconditionally (harmless in dev, no reason to gate those two). When
 setup in DEPLOYMENT.md §4/§5 (required for `SECURE_SSL_REDIRECT` and secure
 cookies to behave correctly behind a TLS-terminating proxy).
 
+**CI dependency/vulnerability scanning** — GitHub Actions now runs on every
+push and pull request (`.github/workflows/`):
+- `backend-ci.yml` runs `python manage.py check`, a migrations-check,
+  `pytest` with coverage against a real Postgres service container, and a
+  `pip-audit -r requirements.txt` job (informational — logs a warning
+  annotation on findings without failing the build; tighten to a hard
+  failure once existing findings are triaged).
+- `frontend-ci.yml` runs `npm ci`, `npm run lint`, `npm test`, `npm run
+  build`, and a separate `npm audit --audit-level=high` job (this one **does
+  fail the build** on high/critical vulnerabilities).
+- `dependency-review.yml` runs GitHub's native `dependency-review-action` on
+  pull requests, diffing changed manifests against the base branch.
+
+This closes the previously-listed "no dependency/vulnerability scanning
+configured" gap. See DEPLOYMENT.md for a description of the CI setup. Note:
+these workflow files have been validated locally for YAML correctness and
+the underlying commands (`pytest`, `npm test`, `npm run lint`, `npm run
+build`) all pass when run directly in this repo, but the workflows
+themselves have not been exercised against real GitHub Actions
+infrastructure yet — verify on the first push/PR.
+
 **Password policy** — Django's `AUTH_PASSWORD_VALIDATORS` (similarity,
 minimum length, common-password, numeric-password checks) is enabled, now
 with an explicit minimum length of 10 (env: `PASSWORD_MIN_LENGTH`,
@@ -186,9 +207,6 @@ stronger bar appropriate for a government HR system. Still no MFA (see
   (e.g. an attacker with raw SQL access) could still alter history despite
   the API/admin being locked down. For stronger tamper-evidence, consider
   periodic export to write-once/append-only storage.
-- **No dependency/vulnerability scanning configured** (no `pip-audit`,
-  `npm audit` step, or Dependabot config observed) — add one to CI before
-  production rollout.
 - **Logging/monitoring not yet configured** in `settings.py` (no `LOGGING`
   dict, no error tracker integration) — see DEPLOYMENT.md §7.
 - **Document storage is single-host local filesystem** — fine for one app
@@ -209,9 +227,10 @@ enforcement + immutable audit trail) is implemented thoughtfully and remains
 the system's strongest area. This pass closed the previously-listed
 infrastructure gaps that were straightforward to close in-code: rate
 limiting, refresh-token blacklisting, HTTPS/cookie hardening settings,
-secret-fallback protection, stronger password policy, and — since it didn't
-exist yet — a minimal, validated, authenticated-only supporting-document
-upload/download path. What's left (virus scanning, MFA, account lockout,
+secret-fallback protection, stronger password policy, a minimal, validated,
+authenticated-only supporting-document upload/download path, and now CI
+dependency/vulnerability scanning (pip-audit, npm audit, GitHub dependency
+review) on every push/PR. What's left (virus scanning, MFA, account lockout,
 a real secrets manager, shared cache for multi-instance throttling,
-logging/monitoring, dependency scanning) is genuinely out of scope for a
-code-only pass and is called out above rather than left implicit.
+logging/monitoring) is genuinely out of scope for a code-only pass and is
+called out above rather than left implicit.

@@ -1,0 +1,91 @@
+name: Backend CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  test:
+    name: Django tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: naot_leave
+          POSTGRES_PASSWORD: naot_leave
+          POSTGRES_DB: naot_leave
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U naot_leave"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://naot_leave:naot_leave@localhost:5432/naot_leave
+      DJANGO_SECRET_KEY: ci-test-secret-key-not-for-production
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-cov
+
+      - name: Django system checks
+        working-directory: backend
+        run: python manage.py check
+
+      - name: Check for missing migrations
+        working-directory: backend
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Apply migrations (verifies migrate --check readiness)
+        working-directory: backend
+        run: python manage.py migrate
+
+      - name: Run tests with coverage
+        working-directory: backend
+        run: python -m pytest --cov=apps --cov-report=term-missing
+
+  dependency-scan:
+    name: Python dependency vulnerability scan (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      - name: Run pip-audit against requirements.txt
+        # Informational: reports known vulnerabilities in dependencies without
+        # failing the build. Flip to a hard failure once the team has
+        # triaged/accepted the current findings — see SECURITY.md.
+        run: pip-audit -r requirements.txt || echo "::warning::pip-audit found issues — see job log"
