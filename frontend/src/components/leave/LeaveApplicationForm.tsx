@@ -14,28 +14,36 @@ import { useGetLeaveTypesQuery } from "@/features/leave/catalogApi";
 import {
   useCreateLeaveApplicationMutation,
   useSubmitLeaveApplicationMutation,
+  usePreviewWorkingDaysMutation,
 } from "@/features/leave/leaveApi";
 import { previewWeekdayCount } from "@/utils/workingDays";
 
+// Section A fields, per /API.md. `vote_code`/`sub_vote`/`check_number`/
+// `personnel_file`/`full_name`/`designation`/`station`/`division_department`
+// are shown read-only from the user's profile in Step 1 (still sent to the
+// backend on create, since the serializer accepts them — the user profile
+// is the source of truth, the applicant is not expected to edit them here).
 const dependantSchema = z.object({
-  fullName: z.string().min(1, "Name is required"),
+  name: z.string().min(1, "Name is required"),
   relationship: z.string().min(1, "Relationship is required"),
-  dateOfBirth: z.string().optional(),
+  date_of_birth: z.string().optional(),
 });
 
 const formSchema = z
   .object({
-    leaveTypeId: z.number({ error: "Select a leave type" }).positive(),
-    startDate: z.string().min(1, "Start date is required"),
-    endDate: z.string().min(1, "End date is required"),
-    reason: z.string().optional(),
-    address: z.string().optional(),
-    contactPhone: z.string().optional(),
+    leave_type: z.number({ error: "Select a leave type" }).positive(),
+    leave_number: z.string().optional(),
+    start_date: z.string().min(1, "Start date is required"),
+    last_date: z.string().min(1, "End date is required"),
+    travel_assistance: z.boolean(),
+    contact_address: z.string().optional(),
+    phone_number: z.string().optional(),
+    email: z.string().optional(),
     dependants: z.array(dependantSchema),
   })
-  .refine((data) => new Date(data.endDate) >= new Date(data.startDate), {
+  .refine((data) => new Date(data.last_date) >= new Date(data.start_date), {
     message: "End date must be on or after start date",
-    path: ["endDate"],
+    path: ["last_date"],
   });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -48,6 +56,7 @@ export function LeaveApplicationForm() {
   const { data: leaveTypes } = useGetLeaveTypesQuery();
   const [createLeaveApplication, { isLoading: isSaving }] = useCreateLeaveApplicationMutation();
   const [submitLeaveApplication, { isLoading: isSubmitting }] = useSubmitLeaveApplicationMutation();
+  const [previewWorkingDays, { data: serverPreview }] = usePreviewWorkingDaysMutation();
   const [step, setStep] = useState(0);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -61,35 +70,64 @@ export function LeaveApplicationForm() {
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      leaveTypeId: 0,
-      startDate: "",
-      endDate: "",
-      reason: "",
-      address: "",
-      contactPhone: "",
+      leave_type: 0,
+      leave_number: "",
+      start_date: "",
+      last_date: "",
+      travel_assistance: false,
+      contact_address: "",
+      phone_number: user?.phone_number ?? "",
+      email: user?.email ?? "",
       dependants: [],
     },
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: "dependants" });
-  const startDate = watch("startDate");
-  const endDate = watch("endDate");
-  const previewDays = useMemo(() => previewWeekdayCount(startDate, endDate), [startDate, endDate]);
+  const startDate = watch("start_date");
+  const lastDate = watch("last_date");
+  const clientPreviewDays = useMemo(() => previewWeekdayCount(startDate, lastDate), [startDate, lastDate]);
 
   async function goNext() {
-    const fieldsPerStep: (keyof FormValues)[][] = [[], ["leaveTypeId", "startDate", "endDate"], [], []];
+    const fieldsPerStep: (keyof FormValues)[][] = [[], ["leave_type", "start_date", "last_date"], [], []];
     const valid = await trigger(fieldsPerStep[step]);
-    if (valid) setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    if (valid) {
+      if (step === 1 && startDate && lastDate) {
+        previewWorkingDays({ start_date: startDate, last_date: lastDate });
+      }
+      setStep((s) => Math.min(s + 1, STEPS.length - 1));
+    }
   }
 
   function goBack() {
     setStep((s) => Math.max(s - 1, 0));
   }
 
+  function sectionAPayload(values: FormValues) {
+    return {
+      vote_code: undefined,
+      sub_vote: undefined,
+      check_number: user?.check_number ?? undefined,
+      personnel_file: user?.personnel_file_number ?? undefined,
+      full_name: user?.full_name ?? "",
+      designation: user?.designation ?? "",
+      station: user?.station ?? "",
+      division_department: user?.department ?? "",
+      phone_number: values.phone_number,
+      email: values.email,
+      contact_address: values.contact_address,
+      leave_type: values.leave_type,
+      leave_number: values.leave_number,
+      travel_assistance: values.travel_assistance,
+      start_date: values.start_date,
+      last_date: values.last_date,
+      dependants: values.dependants,
+    };
+  }
+
   async function onSaveDraft(values: FormValues) {
     setServerError(null);
     try {
-      await createLeaveApplication({ ...values, isDraft: true }).unwrap();
+      await createLeaveApplication(sectionAPayload(values)).unwrap();
       router.push("/employee/applications");
     } catch {
       setServerError("Could not save draft. Please try again.");
@@ -99,7 +137,7 @@ export function LeaveApplicationForm() {
   async function onSubmitFinal(values: FormValues) {
     setServerError(null);
     try {
-      const created = await createLeaveApplication({ ...values, isDraft: false }).unwrap();
+      const created = await createLeaveApplication(sectionAPayload(values)).unwrap();
       await submitLeaveApplication({ id: created.id }).unwrap();
       router.push("/employee/applications");
     } catch {
@@ -133,11 +171,12 @@ export function LeaveApplicationForm() {
             <h2 className="text-base font-semibold text-gray-900">Personal Information</h2>
             <p className="text-xs text-gray-500">Pre-filled from your profile — read only.</p>
             <div className="grid grid-cols-2 gap-4">
-              <ReadOnlyField label="Full Name" value={user?.fullName} />
-              <ReadOnlyField label="Employee Number" value={user?.employeeNumber ?? "-"} />
-              <ReadOnlyField label="Department" value={user?.department ?? "-"} />
-              <ReadOnlyField label="Designation" value={user?.designation ?? "-"} />
-              <ReadOnlyField label="Email" value={user?.email} />
+              <ReadOnlyField label="Full Name" value={user?.full_name} />
+              <ReadOnlyField label="Check Number" value={user?.check_number} />
+              <ReadOnlyField label="Personnel File Number" value={user?.personnel_file_number} />
+              <ReadOnlyField label="Department" value={user?.department} />
+              <ReadOnlyField label="Station" value={user?.station} />
+              <ReadOnlyField label="Designation" value={user?.designation} />
             </div>
           </div>
         )}
@@ -146,11 +185,11 @@ export function LeaveApplicationForm() {
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Leave Request</h2>
             <div>
-              <Label htmlFor="leaveTypeId">Leave Type</Label>
+              <Label htmlFor="leave_type">Leave Type</Label>
               <select
-                id="leaveTypeId"
+                id="leave_type"
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                {...register("leaveTypeId", { valueAsNumber: true })}
+                {...register("leave_type", { valueAsNumber: true })}
               >
                 <option value="">Select leave type</option>
                 {leaveTypes?.map((lt) => (
@@ -159,42 +198,46 @@ export function LeaveApplicationForm() {
                   </option>
                 ))}
               </select>
-              {errors.leaveTypeId ? (
-                <p className="mt-1 text-xs text-red-600">{errors.leaveTypeId.message}</p>
-              ) : null}
+              {errors.leave_type ? <p className="mt-1 text-xs text-red-600">{errors.leave_type.message}</p> : null}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="startDate">Start Date</Label>
-                <Input id="startDate" type="date" {...register("startDate")} error={errors.startDate?.message} />
+                <Label htmlFor="start_date">Start Date</Label>
+                <Input id="start_date" type="date" {...register("start_date")} error={errors.start_date?.message} />
               </div>
               <div>
-                <Label htmlFor="endDate">End Date</Label>
-                <Input id="endDate" type="date" {...register("endDate")} error={errors.endDate?.message} />
+                <Label htmlFor="last_date">End Date</Label>
+                <Input id="last_date" type="date" {...register("last_date")} error={errors.last_date?.message} />
               </div>
             </div>
             <p className="text-xs text-gray-500">
-              Estimated working days (preview, weekdays only — excludes holidays; final count is computed by
-              the server): <span className="font-semibold text-gray-800">{previewDays}</span>
+              Estimated working days (client preview, weekdays only — excludes holidays):{" "}
+              <span className="font-semibold text-gray-800">{clientPreviewDays}</span>
+              {serverPreview ? (
+                <>
+                  {" "}
+                  · Server preview (excludes holidays too):{" "}
+                  <span className="font-semibold text-gray-800">{serverPreview.working_days}</span>
+                </>
+              ) : null}
             </p>
-            <div>
-              <Label htmlFor="reason">Reason</Label>
-              <textarea
-                id="reason"
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-                rows={3}
-                {...register("reason")}
-              />
-            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" {...register("travel_assistance")} />
+              Request travel assistance
+            </label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="address">Address While on Leave</Label>
-                <Input id="address" {...register("address")} />
+                <Label htmlFor="contact_address">Address While on Leave</Label>
+                <Input id="contact_address" {...register("contact_address")} />
               </div>
               <div>
-                <Label htmlFor="contactPhone">Contact Phone</Label>
-                <Input id="contactPhone" {...register("contactPhone")} />
+                <Label htmlFor="phone_number">Contact Phone</Label>
+                <Input id="phone_number" {...register("phone_number")} />
               </div>
+            </div>
+            <div>
+              <Label htmlFor="leave_number">Leave Number (if known)</Label>
+              <Input id="leave_number" {...register("leave_number")} />
             </div>
           </div>
         )}
@@ -209,7 +252,7 @@ export function LeaveApplicationForm() {
               <div key={field.id} className="grid grid-cols-4 items-end gap-3 rounded-md border border-gray-100 p-3">
                 <div>
                   <Label>Full Name</Label>
-                  <Input {...register(`dependants.${index}.fullName` as const)} />
+                  <Input {...register(`dependants.${index}.name` as const)} />
                 </div>
                 <div>
                   <Label>Relationship</Label>
@@ -217,7 +260,7 @@ export function LeaveApplicationForm() {
                 </div>
                 <div>
                   <Label>Date of Birth</Label>
-                  <Input type="date" {...register(`dependants.${index}.dateOfBirth` as const)} />
+                  <Input type="date" {...register(`dependants.${index}.date_of_birth` as const)} />
                 </div>
                 <Button type="button" variant="danger" onClick={() => remove(index)}>
                   Remove
@@ -227,7 +270,7 @@ export function LeaveApplicationForm() {
             <Button
               type="button"
               variant="secondary"
-              onClick={() => append({ fullName: "", relationship: "", dateOfBirth: "" })}
+              onClick={() => append({ name: "", relationship: "", date_of_birth: "" })}
             >
               + Add Dependant
             </Button>
@@ -237,9 +280,12 @@ export function LeaveApplicationForm() {
         {step === 3 && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Review &amp; Submit</h2>
-            <ReviewRow label="Leave Type" value={leaveTypes?.find((lt) => lt.id === Number(watch("leaveTypeId")))?.name} />
-            <ReviewRow label="Dates" value={`${startDate} to ${endDate} (${previewDays} working days, preview)`} />
-            <ReviewRow label="Reason" value={watch("reason") || "-"} />
+            <ReviewRow
+              label="Leave Type"
+              value={leaveTypes?.find((lt) => lt.id === Number(watch("leave_type")))?.name}
+            />
+            <ReviewRow label="Dates" value={`${startDate} to ${lastDate} (${clientPreviewDays} working days, preview)`} />
+            <ReviewRow label="Travel Assistance" value={watch("travel_assistance") ? "Requested" : "Not requested"} />
             <ReviewRow label="Dependants" value={String(fields.length)} />
             {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
           </div>

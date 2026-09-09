@@ -5,7 +5,7 @@ import type { Holiday, LeaveType } from "@/types";
 // only (enforced server-side). Matches /API.md field names exactly.
 export const catalogApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getLeaveTypes: builder.query<LeaveType[] | { results: LeaveType[] }, void>({
+    getLeaveTypes: builder.query<LeaveType[], void>({
       query: () => "leave-types/",
       providesTags: ["LeaveTypes"],
       transformResponse: (response: LeaveType[] | { results: LeaveType[] }) =>
@@ -23,7 +23,7 @@ export const catalogApi = baseApi.injectEndpoints({
       query: ({ id }) => ({ url: `leave-types/${id}/`, method: "PATCH", body: { is_active: false } }),
       invalidatesTags: ["LeaveTypes"],
     }),
-    getHolidays: builder.query<Holiday[] | { results: Holiday[] }, void>({
+    getHolidays: builder.query<Holiday[], void>({
       query: () => "holidays/",
       providesTags: ["Holidays"],
       transformResponse: (response: Holiday[] | { results: Holiday[] }) =>

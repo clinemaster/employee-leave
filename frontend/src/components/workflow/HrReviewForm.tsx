@@ -5,19 +5,22 @@ import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { useVerifyLeaveApplicationMutation, useReturnLeaveApplicationMutation } from "@/features/leave/leaveApi";
+import { useVerifyLeaveApplicationMutation } from "@/features/leave/leaveApi";
 
 // Section B2 — HR_ADMIN. POST .../verify/ with decision: true/false, comments,
-// signature_name/designation.
+// signature_name/designation. NOTE: /API.md documents `.../return/` as
+// HOD/HOS/HOU-only (from PENDING_HOD_REVIEW); an HR "return to line manager"
+// action (RETURNED_TO_HOD) is listed in the status enum but has no REST
+// action wired up yet ("Deferred" section of API.md) — so no return button
+// is offered here until backend exposes it. HR can still verify with
+// decision: false to flag an issue via comments.
 export function HrReviewForm({ applicationId }: { applicationId: number }) {
   const router = useRouter();
   const [verify, { isLoading: isVerifying }] = useVerifyLeaveApplicationMutation();
-  const [returnApp, { isLoading: isReturning }] = useReturnLeaveApplicationMutation();
   const [verified, setVerified] = useState(true);
   const [comments, setComments] = useState("");
   const [signatureName, setSignatureName] = useState("");
   const [signatureDesignation, setSignatureDesignation] = useState("");
-  const [returnComments, setReturnComments] = useState("");
 
   async function onVerify() {
     await verify({
@@ -27,12 +30,6 @@ export function HrReviewForm({ applicationId }: { applicationId: number }) {
       signature_name: signatureName,
       signature_designation: signatureDesignation,
     }).unwrap();
-    router.push("/hr/applications");
-  }
-
-  async function onReturn() {
-    if (!returnComments.trim()) return;
-    await returnApp({ id: applicationId, comments: returnComments }).unwrap();
     router.push("/hr/applications");
   }
 
@@ -80,20 +77,6 @@ export function HrReviewForm({ applicationId }: { applicationId: number }) {
         </div>
         <Button onClick={onVerify} disabled={isVerifying}>
           Submit
-        </Button>
-      </div>
-
-      <div className="mt-6 border-t border-gray-100 pt-4">
-        <Label htmlFor="hrReturnComments">Return to Line Manager (with comments)</Label>
-        <textarea
-          id="hrReturnComments"
-          rows={2}
-          className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-          value={returnComments}
-          onChange={(e) => setReturnComments(e.target.value)}
-        />
-        <Button variant="danger" className="mt-2" disabled={isReturning || !returnComments.trim()} onClick={onReturn}>
-          Return
         </Button>
       </div>
     </Card>
