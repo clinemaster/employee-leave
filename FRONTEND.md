@@ -32,8 +32,90 @@ Configure the API origin via `frontend/.env.local` (copy `.env.local.example`):
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ```
 
-`npm run build` and `npm run lint` both pass cleanly as of this writing (one benign React Compiler
-warning about `react-hook-form`'s `watch()` not being memoizable — expected, not an error).
+`npm run build` and `npm run lint` both pass cleanly as of this writing (two benign React Compiler
+warnings about `react-hook-form`'s `watch()` not being memoizable — expected, not an error).
+
+## Test coverage
+
+`npm test` — 70 passing tests across 16 suites (up from the previous round's 43/7). New this round:
+
+- **Workflow forms** (`components/workflow/HodRecommendationForm.test.tsx`,
+  `HrReviewForm.test.tsx`, `ApprovalForm.test.tsx`): each renders its section's fields, exercises
+  the zod-required-comment paths (comments required on HOD "Do not recommend" and on Return;
+  a reason required on Deny), and asserts the exact payload shape sent to
+  `recommendLeaveApplication` / `returnLeaveApplication` / `verifyLeaveApplication` /
+  `approveLeaveApplication` / `denyLeaveApplication` (URL, method, and JSON body).
+- **`AuthHydrator`** (`features/auth/AuthHydrator.test.tsx`): covers `tokenStorage.loadTokens()`
+  reading/omitting persisted tokens, the hydrator populating `state.auth.user` from `GET
+  /api/users/me/` once a token is preloaded, staying unauthenticated with no token (RTK Query's
+  `skip` correctly prevents the request), and a malformed/expired token (401 with no refresh
+  token) being handled by `baseApi`'s reauth wrapper (logout) rather than crashing.
+- **`baseApi` token-refresh-on-401** (`lib/api/baseApi.test.ts`): a 401 triggers exactly one `POST
+  /api/auth/refresh/`, the original request is retried once with the new token on success (3 total
+  `fetch` calls, store's `accessToken` updated), a failed refresh logs the user out without
+  retrying or looping (2 calls, not 3+), and a 401 with no refresh token available skips the
+  refresh call entirely and logs out immediately (1 call).
+- **Role-scoped detail pages**, one smoke test per role
+  (`app/employee/applications/[id]/page.test.tsx`, `app/hod/applications/[id]/page.test.tsx`,
+  `app/hr/applications/[id]/page.test.tsx`, `app/authorization/applications/[id]/page.test.tsx`):
+  renders each page with a mocked store + `fetch`, and asserts the RBAC matrix — the employee's own
+  view is entirely read-only (all four sections via `SectionReadOnly`, PDF download gated on
+  `APPROVED`/`PDF_GENERATED` status) with no workflow-mutation form present; the HOD page shows
+  Section A read-only plus an editable B1 `HodRecommendationForm` only (no verify/approve UI); the
+  HR page shows A+B1 read-only plus an editable B2 `HrReviewForm` only; the Authorizing Officer page
+  shows A+B1+B2 read-only plus an editable Section C `ApprovalForm` only. These pages use React 19's
+  `use()` on the route's `params` promise — under jsdom a bare `Promise.resolve(...)` still suspends
+  the component on first render (it isn't pre-settled the way Next.js's own internal params promise
+  is), so the tests pass a promise with `status`/`value` pre-attached, mirroring the informal
+  contract `use()` recognizes for an already-settled thenable, rather than wrapping in `<Suspense>`
+  and asserting after a loading state.
+- **Regression**: `LeaveApplicationForm.test.tsx` gained a test for the `leave_type` zod message —
+  see "Fixed this round" below.
+
+### Remaining honest gaps
+
+- `TabbedApplications`, `ApplicationsTable`, `DashboardStats`, `NotificationBell`, `LeaveBalances`,
+  and the admin CRUD pages (`/admin/*`) have no dedicated tests — only smoke-tested indirectly
+  where they're rendered inside a covered detail page (e.g. `NotificationBell` and `LeaveBalances`
+  render inside the new HR detail-page smoke test, but their own internal behavior — mark-read,
+  mark-all-read, the period filter — isn't independently asserted).
+- The list/dashboard pages (`/employee/applications`, `/hod/applications`, `/hr/applications`,
+  `/authorization/applications`) — tabs, pagination, HR's filter inputs — have no tests; only the
+  four `[id]` detail pages (one per role) were added this round, per the task's scope.
+- `AuthHydrator`'s test covers `loadTokens()` + the hydrator's own effect; it does not cover
+  `store/provider.tsx`'s lazy-`useState` preload path directly (that a fresh page load with a
+  persisted token produces a store whose `preloadedState.auth` already has `isAuthenticated: true`
+  before the first render) — indirectly implied by the passing `loadTokens()` tests plus reading the
+  source, but not exercised through an actual `StoreProvider` render.
+- `RoleGuard`'s existing tests + the new detail-page smoke tests cover the "wrong role redirected"
+  and "right role sees content" paths for the four workflow roles; SYSTEM_ADMIN's own dedicated
+  admin-page components remain untested (only its access to `/hod` via `RoleGuard.test.tsx` is
+  covered).
+- No end-to-end/integration test drives the full multi-step workflow across roles (create → submit
+  → recommend → verify → approve) in one test; each stage is covered in isolation.
+- Accessibility pass, and true browser/e2e testing (Playwright/Cypress) — still not in scope.
+
+### Fixed this round
+
+- `LeaveApplicationForm`'s `leave_type` zod validation: previously
+  `z.number({ error: "Select a leave type" }).positive()` — the custom `error` message on
+  `z.number()` only fires for a genuine type mismatch (e.g. a string or `undefined`), not for a
+  same-type value that merely fails a later chained refinement like `.positive()`. Since the field's
+  default value is `0` (a real number), advancing past the Leave Request step without picking a
+  type showed zod's generic "too small" message instead of the intended "Select a leave type".
+  Fixed by replacing `.positive()` with `.refine((val) => val > 0, { message: "Select a leave type"
+  })` in both `LeaveApplicationForm.tsx`'s local schema and the mirrored reference schema in
+  `lib/validation/leaveApplication.ts`. Regression test added in `LeaveApplicationForm.test.tsx`.
+- Noted but **not** fixed (out of scope for this round, flagged for awareness): in
+  `HodRecommendationForm`, the "Comments (required)" label and `watch("decision")` can read as
+  `false`/`undefined` on first render before the user interacts with the native `<select>`, even
+  though `useForm`'s `defaultValues.decision` is `true` — a quirk of pairing `watch()` with a
+  `setValueAs`-transformed uncontrolled `<select>`. It self-corrects the moment the user touches the
+  select (and the *submitted* value is always correct, since that's read via `getValues`/the DOM ref
+  at submit time, not `watch()`), so no application can actually be recommended with the wrong
+  `decision` value — but the label's fleeting "(required)" hint before any interaction is misleading
+  UX. A safer fix would be to drive the `<select>`'s `value`/`onChange` explicitly (a controlled
+  `Controller`) instead of relying on `watch()` over an uncontrolled native element.
 
 ## Stack
 
@@ -277,13 +359,9 @@ download (see below, which can't go through RTK Query since it streams a blob).
 - Admin org-structure screens (`/admin/organization`) offer list/create/toggle-active only, no full
   edit-all-fields form (e.g. renaming a station's address) — add if the backend confirms a stable
   field set is unlikely to change further.
-- `npm run build`'s TypeScript check currently fails — but only on files under the concurrently-run
-  test-suite agent's `**/*.test.ts(x)` files (missing Jest ambient types /
-  `tsconfig.json`/`jest.config.js` wiring, e.g. `Cannot find name 'expect'`), not on any
-  FRONTEND-owned source file. Verified via `npx tsc --noEmit` filtered to exclude `*.test.*` — zero
-  errors outside test files as of this commit. This should self-resolve once the test-suite agent
-  finishes wiring Jest's types into `tsconfig.json` (or an `include`/`exclude` split so `next build`
-  doesn't type-check test files); re-run `npm run build` after that lands.
+- ~~`npm run build`'s TypeScript check currently fails on `**/*.test.ts(x)` files~~ — resolved as of
+  this round: `npm run build` passes cleanly (TypeScript check included) with 70 passing tests
+  across 16 suites present in the tree.
 - Reporting UI has no charting — plain filter form + file download only, per the task's scope
   ("no fancy charting needed").
 
@@ -315,7 +393,8 @@ download (see below, which can't go through RTK Query since it streams a blob).
   upgrade but aren't wired in yet.
 - Accessibility pass (labels/ARIA present at a basic level via `<Label htmlFor>`, no dedicated
   audit).
-- Automated tests (unit/e2e) — none were added in this phase.
+- Automated unit/component tests — see the dedicated "Test coverage" section above (70 passing as
+  of this round). True browser/e2e testing (Playwright/Cypress) is still not in scope.
 - Middleware-level (edge) route protection — guarding is currently client-side only (`RoleGuard`),
   not a Next.js `middleware.ts`. Since real enforcement is server-side this was judged acceptable
   for phase 1, but a `middleware.ts` redirect could be added later for a faster, no-flash redirect.

@@ -13,7 +13,9 @@ export const dependantSchema = z.object({
 
 export const leaveRequestSchema = z
   .object({
-    leave_type: z.number({ error: "Select a leave type" }).positive(),
+    // See LeaveApplicationForm.tsx's identical schema for why `.refine()`
+    // is used instead of `.positive()` here.
+    leave_type: z.number().refine((val) => val > 0, { message: "Select a leave type" }),
     start_date: z.string().min(1, "Start date is required"),
     last_date: z.string().min(1, "End date is required"),
     contact_address: z.string().optional(),

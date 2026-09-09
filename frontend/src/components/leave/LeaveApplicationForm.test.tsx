@@ -91,6 +91,26 @@ describe("LeaveApplicationForm", () => {
     expect(screen.getByRole("heading", { name: "Leave Request" })).toBeInTheDocument();
   });
 
+  it("shows the 'Select a leave type' message when advancing without picking one (regression)", async () => {
+    // Regression test: `leave_type`'s zod schema used to be
+    // `z.number({ error: "Select a leave type" }).positive()`, whose custom
+    // message only fires on a genuine type mismatch — the default value `0`
+    // is still a number, so it failed `.positive()`'s own built-in message
+    // instead. Fixed by using `.refine()` so this message always fires.
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Leave Request" });
+
+    await user.type(screen.getByLabelText("Start Date"), "2026-02-01");
+    await user.type(screen.getByLabelText("End Date"), "2026-02-05");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(await screen.findByText("Select a leave type")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Leave Request" })).toBeInTheDocument();
+  });
+
   it("navigates Next -> Back and preserves step 1 content", async () => {
     const user = userEvent.setup();
     renderForm();

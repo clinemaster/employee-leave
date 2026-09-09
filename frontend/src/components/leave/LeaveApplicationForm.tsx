@@ -31,7 +31,12 @@ const dependantSchema = z.object({
 
 const formSchema = z
   .object({
-    leave_type: z.number({ error: "Select a leave type" }).positive(),
+    // `.positive()` alone would fail the default value `0` with zod's own
+    // "too small" message instead of this custom one (a `{ error }` message
+    // on `z.number()` only fires for a genuine type mismatch, not a
+    // same-type value that fails a later refinement) — `.refine()` ensures
+    // the intended message always fires for the unselected/zero case.
+    leave_type: z.number().refine((val) => val > 0, { message: "Select a leave type" }),
     leave_number: z.string().optional(),
     start_date: z.string().min(1, "Start date is required"),
     last_date: z.string().min(1, "End date is required"),
