@@ -129,10 +129,10 @@ managers, HR, etc. can themselves be leave applicants.
 - `features/leave/catalogApi.ts`: `leave-types/` and `holidays/` CRUD (read: any user, write:
   SYSTEM_ADMIN, enforced server-side) — used by the admin pages and the leave-type dropdown in the
   application form.
-- **No dashboard-stats endpoint exists in API.md.** The employee stat cards
-  (`app/employee/applications/page.tsx`) compute totals client-side from the (already
-  row-level-scoped) applications list on the first page returned — this is an approximation, not a
-  true aggregate; see Deferred.
+- `features/dashboard/dashboardApi.ts`: `getDashboardStats` (`GET /api/dashboard-stats/`,
+  role-scoped shape) — see "Phase 2 additions" below for how it's used.
+- `features/notifications/notificationsApi.ts`, `features/leave/balancesApi.ts`,
+  `features/users/usersApi.ts`, `features/departments/orgApi.ts` — added in phase 2, see below.
 
 ## Role-based route protection (UX-only)
 
@@ -169,8 +169,8 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
 
 ## Role dashboards / review pages
 
-- **Employee**: `/employee/applications` — 6 stat cards (total/draft/pending/approved/denied/
-  returned, computed client-side — see RTK Query note above) + applications table;
+- **Employee**: `/employee/applications` — real server-computed stat cards (`DashboardStats`) +
+  paginated applications table + leave balances (`LeaveBalances`);
   `/employee/applications/[id]` — full read-only A/B1/B2/C view + "Download PDF", enabled only once
   status is `APPROVED`/`PDF_GENERATED` (matches the backend's allowed-status gate).
 - **HOD** (`HEAD_OF_DEPARTMENT`/`HEAD_OF_SECTION`/`HEAD_OF_UNIT`): `/hod/applications` — tabs
@@ -191,13 +191,101 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
   signature name/designation). Travel assistance is a Section A **request** made by the applicant
   (shown read-only in Section A), not a separate Section C decision field — API.md does not
   document one.
-- **Admin** (`SYSTEM_ADMIN`): `/admin/leave-types` (add / edit-name / deactivate — no reorder UI,
-  since API.md documents no bulk-reorder endpoint) and `/admin/holidays` (add with a
-  recurring-holiday checkbox / delete).
+- **Admin** (`SYSTEM_ADMIN`): `/admin/leave-types` (add / edit-name / deactivate / up-down reorder),
+  `/admin/holidays` (add with a recurring-holiday checkbox / delete), `/admin/users` (list +
+  create + inline role/active edit), `/admin/organization` (departments/sections/units/stations —
+  list + create + active toggle), `/admin/reports` (filtered CSV/XLSX export download).
 
 No digital signature capture, DSMS integration, or in-app PDF viewer was built — signature areas are
 the backend's PDF-generation concern; the frontend only offers a "Download PDF" action that opens
 the generated file's URL in a new tab.
+
+## Phase 2 additions (this round)
+
+Built against the backend's updated `/API.md` (notifications, dashboard-stats, leave-balances,
+users/org CRUD, and reports/export all landed since phase 1). All new server state goes through
+RTK Query, same as phase 1 — no ad-hoc `fetch` in components except the reports page's file
+download (see below, which can't go through RTK Query since it streams a blob).
+
+- **Notifications**: `features/notifications/notificationsApi.ts` (`getNotifications`,
+  `markNotificationRead`, `markAllNotificationsRead`, matching `/API.md`'s `GET /api/notifications/`,
+  `POST .../read/`, `POST .../mark-all-read/`) + `components/dashboard/NotificationBell.tsx`, a
+  bell-with-unread-badge dropdown mounted in `AppShell`'s header. Poll-on-open only (RTK Query's
+  normal cache/refetch-on-focus behavior) — no websocket/push channel is documented.
+- **Dashboard stats**: `features/dashboard/dashboardApi.ts` (`getDashboardStats`, `GET
+  /api/dashboard-stats/`) + `components/dashboard/DashboardStats.tsx`, a role-aware stat-card row
+  (the response shape differs per role per `/API.md`). Replaces the old client-side-approximated
+  employee stat cards; now rendered on the employee, HOD, HR, and Authorizing Officer application
+  list pages. (SYSTEM_ADMIN's richer aggregate shape — `applications_by_leave_type`,
+  `average_processing_time_hours`, etc. — is typed in `DashboardStats` but not yet surfaced with a
+  dedicated admin overview page/chart; only the flat counts are rendered anywhere. That richer
+  admin dashboard view is deferred.)
+- **Pagination**: `components/tables/ApplicationsTable.tsx` now accepts an optional `pagination`
+  prop (page / count / onPageChange) and renders Previous/Next controls against the list endpoints'
+  `{count, next, previous, results}` shape; `components/dashboard/TabbedApplications.tsx` and the
+  employee applications page own the `page` state and reset to page 1 when the active tab or
+  filters change.
+- **HR search/filter UI**: `/hr/applications` now has real filter inputs (employee name/search,
+  check number, personnel file, department, station, leave type, date) wired to
+  `leaveApi.getLeaveApplications` query params via `TabbedApplications`'s `extraParams` prop. Only
+  `status`/`leave_type`/`employee`/`page` are guaranteed-supported filters per `/API.md`; the
+  others (`search`, `check_number`, `personnel_file`, `division_department`, `station`,
+  `start_date`) are sent optimistically — DRF generally ignores unrecognized query params rather
+  than erroring, but they only narrow results once/if the backend's filterset wires them up. Not
+  yet confirmed against a live backend — verify against a real deployment and adjust field names if
+  the backend's filterset differs.
+- **Leave-type reorder**: `/admin/leave-types` has up/down buttons that swap two rows' `sort_order`
+  via two sequential `PATCH` calls — no bulk/reorder endpoint is documented in `/API.md`.
+- **Admin CRUD screens**: `/admin/users` (list + create + inline role/active edit, paginated,
+  `features/users/usersApi.ts` against `/api/users/`) and `/admin/organization`
+  (`features/departments/orgApi.ts` against `/api/{departments,sections,units,stations}/` — list +
+  create + active-toggle for each of the four resources on one page).
+- **Leave balances**: `features/leave/balancesApi.ts` (`GET /api/leave-balances/`) +
+  `components/leave/LeaveBalances.tsx`, shown on the employee dashboard (own balances, no
+  `employeeId`) and on the HR application-review page (`employeeId={application.employee}`, since
+  HR/AO/Admin can see all balances per `/API.md`).
+- **Workflow forms → react-hook-form + zod**: `HodRecommendationForm`, `HrReviewForm`, and
+  `ApprovalForm` (`components/workflow/*`) now use `react-hook-form` + `zodResolver`, matching the
+  employee application form's pattern. New schemas in `lib/validation/leaveApplication.ts`:
+  `hrReviewSchema`, `denySchema` (comments required to deny), `hodReturnSchema` (comments required
+  to return). `ApprovalForm`'s approve/deny are two independent forms now (previously shared local
+  state for signature fields), which also fixed a latent bug where a deny action could submit
+  without its own signature.
+- **Reports page**: `/admin/reports` — filter form (status, leave type, date range, format) that
+  does a plain authenticated `fetch` (not RTK Query — it streams a file blob, triggers a
+  browser download, and doesn't belong in the cache) against
+  `GET /api/reports/leave-applications/?format=csv|xlsx&...`, matching `/API.md`'s query params
+  (`start_date`, `end_date`, `department`, `station`, `leave_type`, `status`, `employee`). Surfaces
+  403 (wrong role) and 404 (endpoint missing) distinctly rather than a raw fetch error.
+
+### Deferred (still open after this round)
+
+- SYSTEM_ADMIN's aggregate dashboard-stats fields (`applications_by_leave_type`,
+  `applications_by_department`, `applications_by_station`, `average_processing_time_hours`) are
+  typed but not rendered anywhere yet — no charts, no dedicated admin overview page.
+- HR filter fields beyond `status`/`leave_type`/`employee`/`page` are sent optimistically and not
+  verified against a live backend filterset — confirm field names once the backend's list-endpoint
+  filtering is live and adjust `LeaveApplicationListParams` in `features/leave/leaveApi.ts` if
+  needed.
+- Department field is currently free-text `division_department` on the applications list filter
+  because `LeaveApplication.division_department` is a plain string on the model (not an FK to the
+  new `Department` resource) per `/API.md`'s Section A field list — the admin org-structure CRUD
+  and this filter are not cross-wired (picking a department in the filter is a text match, not a
+  dropdown of the new `/api/departments/` resource).
+- No drag-and-drop for leave-type reorder — up/down buttons only (no bulk-reorder endpoint exists
+  to justify DnD's extra complexity/dependency).
+- Admin org-structure screens (`/admin/organization`) offer list/create/toggle-active only, no full
+  edit-all-fields form (e.g. renaming a station's address) — add if the backend confirms a stable
+  field set is unlikely to change further.
+- `npm run build`'s TypeScript check currently fails — but only on files under the concurrently-run
+  test-suite agent's `**/*.test.ts(x)` files (missing Jest ambient types /
+  `tsconfig.json`/`jest.config.js` wiring, e.g. `Cannot find name 'expect'`), not on any
+  FRONTEND-owned source file. Verified via `npx tsc --noEmit` filtered to exclude `*.test.*` — zero
+  errors outside test files as of this commit. This should self-resolve once the test-suite agent
+  finishes wiring Jest's types into `tsconfig.json` (or an `include`/`exclude` split so `next build`
+  doesn't type-check test files); re-run `npm run build` after that lands.
+- Reporting UI has no charting — plain filter form + file download only, per the task's scope
+  ("no fancy charting needed").
 
 ## Deferred to a later phase (explicitly out of scope here)
 
