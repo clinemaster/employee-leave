@@ -1,20 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { StatCard } from "@/components/dashboard/StatCard";
 import { ApplicationsTable } from "@/components/tables/ApplicationsTable";
+import { LeaveBalances } from "@/components/leave/LeaveBalances";
 import { Button } from "@/components/ui/Button";
 import { useGetLeaveApplicationsQuery } from "@/features/leave/leaveApi";
 
 // NOTE: API.md does not document a dedicated dashboard-stats endpoint, so
 // counts here are derived client-side from the (server row-level-scoped)
 // applications list — for an EMPLOYEE this is already just their own
-// applications. This only covers the first page returned; a follow-up
-// should either add pagination or ask backend for a stats endpoint.
+// applications. Stats cover the current page only; once a real
+// dashboard-stats endpoint lands in API.md this should switch to it (see
+// FRONTEND.md "Deferred").
 export default function EmployeeApplicationsPage() {
-  const { data: applications, isLoading } = useGetLeaveApplicationsQuery();
+  const [page, setPage] = useState(1);
+  const { data: applications, isLoading } = useGetLeaveApplicationsQuery({ page });
 
   const stats = useMemo(() => {
     const items = applications?.results ?? [];
@@ -50,12 +53,20 @@ export default function EmployeeApplicationsPage() {
         <StatCard label="Returned" value={stats.returned} />
       </div>
 
+      <div className="mb-6">
+        <LeaveBalances />
+      </div>
+
       <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">Recent Applications</h2>
         {isLoading ? (
           <p className="text-sm text-gray-500">Loading...</p>
         ) : (
-          <ApplicationsTable items={applications?.results ?? []} detailBasePath="/employee/applications" />
+          <ApplicationsTable
+            items={applications?.results ?? []}
+            detailBasePath="/employee/applications"
+            pagination={{ page, count: applications?.count ?? 0, onPageChange: setPage }}
+          />
         )}
       </div>
     </AppShell>

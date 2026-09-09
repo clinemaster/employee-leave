@@ -10,6 +10,7 @@ import { logout } from "@/store/slices/authSlice";
 import { clearTokens } from "@/lib/auth/tokenStorage";
 import { Button } from "@/components/ui/Button";
 import { RoleGuard } from "@/components/workflow/RoleGuard";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 const navByRole: Record<string, { label: string; href: string }[]> = {
   EMPLOYEE: [
@@ -39,6 +40,9 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
   SYSTEM_ADMIN: [
     { label: "Leave Types", href: "/admin/leave-types" },
     { label: "Holidays", href: "/admin/holidays" },
+    { label: "Users", href: "/admin/users" },
+    { label: "Organization", href: "/admin/organization" },
+    { label: "Reports", href: "/admin/reports" },
     { label: "My Applications", href: "/employee/applications" },
   ],
 };
@@ -83,9 +87,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="text-sm text-gray-500">
               {user ? `${user.full_name} · ${user.role.replaceAll("_", " ")}` : ""}
             </span>
-            <Button variant="secondary" onClick={handleLogout}>
-              Log out
-            </Button>
+            <div className="flex items-center gap-3">
+              <NotificationBell />
+              <Button variant="secondary" onClick={handleLogout}>
+                Log out
+              </Button>
+            </div>
           </header>
           <main className="flex-1 p-6">{children}</main>
         </div>

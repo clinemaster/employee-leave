@@ -4,6 +4,7 @@ import { use } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { SectionA, SectionB1ReadOnly } from "@/components/leave/SectionReadOnly";
 import { HrReviewForm } from "@/components/workflow/HrReviewForm";
+import { LeaveBalances } from "@/components/leave/LeaveBalances";
 import { useGetLeaveApplicationQuery } from "@/features/leave/leaveApi";
 
 export default function HrApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -20,6 +21,7 @@ export default function HrApplicationDetailPage({ params }: { params: Promise<{ 
         <div className="space-y-4">
           <SectionA application={application} />
           <SectionB1ReadOnly application={application} />
+          <LeaveBalances employeeId={application.employee} title="Applicant Leave Balances" />
           <HrReviewForm applicationId={applicationId} />
         </div>
       )}

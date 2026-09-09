@@ -16,6 +16,20 @@ export interface LeaveApplicationListParams {
   leave_type?: number;
   employee?: number;
   page?: number;
+  // Best-effort extra filters for the HR search UI. /API.md only documents
+  // `status`, `leave_type`, `employee` as guaranteed query params — these
+  // additional ones (check number, personnel file, department, station,
+  // date range, free-text search) are sent optimistically; DRF filter
+  // backends generally ignore unrecognized query params rather than error,
+  // but they only narrow results if/when the backend wires up matching
+  // filterset fields. See FRONTEND.md "Deferred".
+  search?: string;
+  check_number?: string;
+  personnel_file?: string;
+  division_department?: string;
+  station?: string;
+  start_date?: string;
+  last_date?: string;
 }
 
 // Section A fields (see API.md) — the only fields an applicant may send on

@@ -27,6 +27,21 @@ export default function AdminLeaveTypesPage() {
     setCode("");
   }
 
+  // No bulk/reorder endpoint is documented in /API.md — swap the two
+  // affected rows' `sort_order` via sequential PATCH calls instead.
+  const sorted = [...(leaveTypes ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+
+  async function move(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= sorted.length) return;
+    const a = sorted[index];
+    const b = sorted[target];
+    await Promise.all([
+      updateLeaveType({ id: a.id, sort_order: b.sort_order }).unwrap(),
+      updateLeaveType({ id: b.id, sort_order: a.sort_order }).unwrap(),
+    ]);
+  }
+
   return (
     <AppShell>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">Manage Leave Types</h1>
@@ -65,9 +80,31 @@ export default function AdminLeaveTypesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {leaveTypes?.map((lt) => (
+              {sorted.map((lt, index) => (
                 <tr key={lt.id}>
-                  <td className="py-2 pr-4">{lt.sort_order}</td>
+                  <td className="py-2 pr-4">
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label="Move up"
+                        className="rounded border border-gray-300 px-1.5 disabled:opacity-30"
+                        disabled={index === 0}
+                        onClick={() => move(index, -1)}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Move down"
+                        className="rounded border border-gray-300 px-1.5 disabled:opacity-30"
+                        disabled={index === sorted.length - 1}
+                        onClick={() => move(index, 1)}
+                      >
+                        ↓
+                      </button>
+                      <span>{lt.sort_order}</span>
+                    </div>
+                  </td>
                   <td className="py-2 pr-4">{lt.code}</td>
                   <td className="py-2 pr-4">{lt.name}</td>
                   <td className="py-2 pr-4">{lt.is_active ? "Active" : "Inactive"}</td>
