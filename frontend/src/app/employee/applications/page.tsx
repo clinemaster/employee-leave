@@ -1,39 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/dashboard/AppShell";
-import { StatCard } from "@/components/dashboard/StatCard";
+import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { ApplicationsTable } from "@/components/tables/ApplicationsTable";
 import { LeaveBalances } from "@/components/leave/LeaveBalances";
 import { Button } from "@/components/ui/Button";
 import { useGetLeaveApplicationsQuery } from "@/features/leave/leaveApi";
 
-// NOTE: API.md does not document a dedicated dashboard-stats endpoint, so
-// counts here are derived client-side from the (server row-level-scoped)
-// applications list — for an EMPLOYEE this is already just their own
-// applications. Stats cover the current page only; once a real
-// dashboard-stats endpoint lands in API.md this should switch to it (see
-// FRONTEND.md "Deferred").
+// Stat cards are now real server aggregates from GET /api/dashboard-stats/
+// (see DashboardStats component / features/dashboard/dashboardApi.ts) —
+// no longer a client-side approximation from the first page of results.
 export default function EmployeeApplicationsPage() {
   const [page, setPage] = useState(1);
   const { data: applications, isLoading } = useGetLeaveApplicationsQuery({ page });
-
-  const stats = useMemo(() => {
-    const items = applications?.results ?? [];
-    return {
-      total: items.length,
-      draft: items.filter((a) => a.status === "DRAFT").length,
-      pending: items.filter((a) =>
-        ["SUBMITTED", "PENDING_HOD_REVIEW", "HOD_RECOMMENDED", "PENDING_HR_REVIEW", "HR_VERIFIED", "PENDING_AUTHORIZATION"].includes(
-          a.status
-        )
-      ).length,
-      approved: items.filter((a) => ["APPROVED", "PDF_GENERATED", "COMPLETED"].includes(a.status)).length,
-      denied: items.filter((a) => a.status === "DENIED").length,
-      returned: items.filter((a) => ["RETURNED_TO_EMPLOYEE", "RETURNED_TO_HOD"].includes(a.status)).length,
-    };
-  }, [applications]);
 
   return (
     <AppShell>
@@ -44,14 +25,7 @@ export default function EmployeeApplicationsPage() {
         </Link>
       </div>
 
-      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard label="Total" value={stats.total} />
-        <StatCard label="Draft" value={stats.draft} />
-        <StatCard label="Pending" value={stats.pending} />
-        <StatCard label="Approved" value={stats.approved} />
-        <StatCard label="Denied" value={stats.denied} />
-        <StatCard label="Returned" value={stats.returned} />
-      </div>
+      <DashboardStats />
 
       <div className="mb-6">
         <LeaveBalances />

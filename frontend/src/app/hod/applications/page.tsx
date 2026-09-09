@@ -1,12 +1,14 @@
 "use client";
 
 import { AppShell } from "@/components/dashboard/AppShell";
+import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { TabbedApplications } from "@/components/dashboard/TabbedApplications";
 
 export default function HodApplicationsPage() {
   return (
     <AppShell>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">HOD — Applications</h1>
+      <DashboardStats />
       <TabbedApplications
         detailBasePath="/hod/applications"
         tabs={[

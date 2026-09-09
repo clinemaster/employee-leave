@@ -9,12 +9,11 @@ import { useGetLeaveTypesQuery } from "@/features/leave/catalogApi";
 import { useAppSelector } from "@/store/hooks";
 import { selectAccessToken } from "@/store/slices/authSlice";
 
-// No reporting/export endpoint is documented in /API.md yet (see
-// "Deferred to a later phase" — "Full reporting/export endpoints"). This
-// page is built defensively against the endpoint the backend agent's plan
-// documents it will add: POST/GET /api/reports/leave-applications/ with
-// filters + ?format=csv|xlsx, returning a file. If it 404s, we surface a
-// clear "not available yet" message rather than a raw fetch error.
+// GET /api/reports/leave-applications/?format=csv|xlsx&... (HR_ADMIN,
+// AUTHORIZING_OFFICER, SYSTEM_ADMIN only — see /API.md "Reports / exports").
+// Filters: start_date (>=), end_date (last_date <=), department, station,
+// leave_type, status, employee. Kept defensive (404/403 handling) in case
+// this page is reached before a backend deploy catches up with API.md.
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 const REPORT_ENDPOINT = "reports/leave-applications/";
 
@@ -46,6 +45,10 @@ export default function AdminReportsPage() {
 
       if (res.status === 404) {
         setError("The reporting/export endpoint isn't available on the backend yet. Check back once API.md documents it.");
+        return;
+      }
+      if (res.status === 403) {
+        setError("You don't have permission to run reports (HR_ADMIN, AUTHORIZING_OFFICER, or SYSTEM_ADMIN only).");
         return;
       }
       if (!res.ok) {

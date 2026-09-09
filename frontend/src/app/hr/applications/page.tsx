@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
+import { DashboardStats } from "@/components/dashboard/DashboardStats";
 import { TabbedApplications } from "@/components/dashboard/TabbedApplications";
 import { Input, Label } from "@/components/ui/Input";
 import { useGetLeaveTypesQuery } from "@/features/leave/catalogApi";
@@ -39,6 +40,8 @@ export default function HrApplicationsPage() {
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-900">HR — Applications</h1>
       </div>
+
+      <DashboardStats />
 
       <div className="mb-6 grid grid-cols-2 gap-3 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-3 lg:grid-cols-6">
         <div>
