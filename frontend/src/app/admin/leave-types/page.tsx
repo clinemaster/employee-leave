@@ -10,6 +10,7 @@ import {
   useCreateLeaveTypeMutation,
   useUpdateLeaveTypeMutation,
   useDeactivateLeaveTypeMutation,
+  useReorderLeaveTypesMutation,
 } from "@/features/leave/catalogApi";
 
 export default function AdminLeaveTypesPage() {
@@ -17,6 +18,7 @@ export default function AdminLeaveTypesPage() {
   const [createLeaveType, { isLoading: isCreating }] = useCreateLeaveTypeMutation();
   const [updateLeaveType] = useUpdateLeaveTypeMutation();
   const [deactivateLeaveType] = useDeactivateLeaveTypeMutation();
+  const [reorderLeaveTypes] = useReorderLeaveTypesMutation();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
 
@@ -27,19 +29,19 @@ export default function AdminLeaveTypesPage() {
     setCode("");
   }
 
-  // No bulk/reorder endpoint is documented in /API.md — swap the two
-  // affected rows' `sort_order` via sequential PATCH calls instead.
   const sorted = [...(leaveTypes ?? [])].sort((a, b) => a.sort_order - b.sort_order);
 
+  // POST /api/leave-types/reorder/ — bulk-updates sort_order for the two
+  // swapped rows in one atomic request.
   async function move(index: number, direction: -1 | 1) {
     const target = index + direction;
     if (target < 0 || target >= sorted.length) return;
     const a = sorted[index];
     const b = sorted[target];
-    await Promise.all([
-      updateLeaveType({ id: a.id, sort_order: b.sort_order }).unwrap(),
-      updateLeaveType({ id: b.id, sort_order: a.sort_order }).unwrap(),
-    ]);
+    await reorderLeaveTypes([
+      { id: a.id, sort_order: b.sort_order },
+      { id: b.id, sort_order: a.sort_order },
+    ]).unwrap();
   }
 
   return (

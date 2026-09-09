@@ -23,6 +23,12 @@ export const catalogApi = baseApi.injectEndpoints({
       query: ({ id }) => ({ url: `leave-types/${id}/`, method: "PATCH", body: { is_active: false } }),
       invalidatesTags: ["LeaveTypes"],
     }),
+    // POST /api/leave-types/reorder/ — bulk sort_order update in one atomic
+    // request, replacing the earlier sequential-PATCH workaround.
+    reorderLeaveTypes: builder.mutation<LeaveType[], { id: number; sort_order: number }[]>({
+      query: (body) => ({ url: "leave-types/reorder/", method: "POST", body }),
+      invalidatesTags: ["LeaveTypes"],
+    }),
     getHolidays: builder.query<Holiday[], void>({
       query: () => "holidays/",
       providesTags: ["Holidays"],
@@ -49,6 +55,7 @@ export const {
   useCreateLeaveTypeMutation,
   useUpdateLeaveTypeMutation,
   useDeactivateLeaveTypeMutation,
+  useReorderLeaveTypesMutation,
   useGetHolidaysQuery,
   useCreateHolidayMutation,
   useUpdateHolidayMutation,

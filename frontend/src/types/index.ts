@@ -181,5 +181,33 @@ export interface LeaveBalance {
   employee: number;
   leave_type: number;
   period: string;
-  balance_days: number;
+  balance_days?: number;
+  opening_balance?: number;
+  entitlement?: number;
+  taken?: number;
+  pending?: number;
+  remaining?: number;
+  // Read-only, for comparison: what the LeavePolicy engine would currently
+  // compute (live), and whether `entitlement` has been hand-overridden away
+  // from that value (entitlement != computed_entitlement).
+  computed_entitlement?: number;
+  is_entitlement_overridden?: boolean;
+}
+
+// Admin-configurable annual entitlement rules (SYSTEM_ADMIN only), per
+// /API.md's "Leave Policies" section. Each rule maps a leave_type + optional
+// tenure band (min/max years of service, inclusive; both blank = flat rule)
+// to an annual_entitlement in days.
+export interface LeavePolicy {
+  id: number;
+  leave_type: number;
+  leave_type_name?: string;
+  min_years_of_service?: number | null;
+  max_years_of_service?: number | null;
+  annual_entitlement: number;
+  is_active: boolean;
+  sort_order: number;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
 }

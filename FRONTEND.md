@@ -35,9 +35,52 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 `npm run build` and `npm run lint` both pass cleanly as of this writing (two benign React Compiler
 warnings about `react-hook-form`'s `watch()` not being memoizable — expected, not an error).
 
+## Phase 3 additions (this round)
+
+- **Leave Policies admin UI**: `/admin/leave-policies` (SYSTEM_ADMIN only) — list of `LeavePolicy`
+  rows sorted by leave type then tenure band/`sort_order`, a create/edit form (leave type select,
+  optional min/max years-of-service tenure band, annual entitlement, sort order, description, an
+  Active checkbox), and delete — same useState-driven CRUD pattern as `/admin/leave-types` /
+  `/admin/organization` (no react-hook-form/zod here, matching those pages, not the multi-step
+  application form). Backed by `features/leave/policiesApi.ts` (`getLeavePolicies`,
+  `getLeavePolicy`, `createLeavePolicy`, `updateLeavePolicy`, `deleteLeavePolicy` against
+  `/api/leave-policies/`, tag `LeavePolicies` added to `baseApi`, list/item tag invalidation).
+  `types/index.ts` gained a `LeavePolicy` interface matching `LeavePolicySerializer` field-for-field.
+  Nav link added to `AppShell`'s SYSTEM_ADMIN section, alongside Leave Types/Holidays/Users/
+  Organization/Reports.
+- **Computed-entitlement preview**: `LeaveBalance` type extended with the new read-only comparison
+  fields per `/API.md` (`opening_balance`, `entitlement`, `taken`, `pending`, `remaining`,
+  `computed_entitlement`, `is_entitlement_overridden`); `balance_days` kept as optional for
+  backward compatibility since it wasn't actually documented in `/API.md`. `components/leave/
+  LeaveBalances.tsx` gained an "Entitlement" column showing the row's `entitlement`, with an amber
+  "Overridden (policy: N)" badge when `is_entitlement_overridden` is true (comparing against
+  `computed_entitlement`) and a muted "(policy-derived)" hint otherwise — so HR can see at a glance
+  whether a balance was policy-computed or hand-overridden.
+- **Bulk leave-type reorder**: the backend published `POST /api/leave-types/reorder/` this round
+  (bulk `sort_order` update, body `[{id, sort_order}, ...]`). `catalogApi.ts` gained
+  `reorderLeaveTypes`, and `/admin/leave-types`'s up/down move handler now sends one bulk call
+  instead of two sequential `PATCH` calls — the "no bulk/reorder endpoint" deferred note from the
+  previous round is resolved. Still no drag-and-drop UI, just the existing up/down buttons.
+- Tests: `features/leave/policiesApi.test.ts` (list/get/create/update/delete request shape + tag
+  invalidation, mirroring `leaveApi.test.ts`'s pattern) and `app/admin/leave-policies/page.test.tsx`
+  (renders existing policies grouped/sorted, empty state, create-form submission body, client-side
+  required-field validation, delete button) — 10 new tests, run inside `AppShell`/`RoleGuard` as an
+  authenticated SYSTEM_ADMIN via `makeStore(...)` + a mocked `fetch`, same harness as the existing
+  role-scoped detail-page smoke tests.
+
+### Deferred from this round
+
+- The leave-policies list/form has no reorder UI beyond the numeric `sort_order` input (no
+  up/down buttons like `/admin/leave-types`, no drag-and-drop) — acceptable since bands per leave
+  type are typically few in number, but worth adding if that assumption breaks.
+- No dedicated confirmation dialog on delete (matches the existing `/admin/holidays` pattern of an
+  immediate `DELETE` on click — consistent with the rest of the admin CRUD, not a new gap).
+
 ## Test coverage
 
-`npm test` — 70 passing tests across 16 suites (up from the previous round's 43/7). New this round:
+`npm test` — 80 passing tests across 18 suites (up from the previous round's 70/16; the 10 new
+tests are this round's leave-policies API slice + admin page, see "Phase 3 additions" above).
+Carried over from the previous round:
 
 - **Workflow forms** (`components/workflow/HodRecommendationForm.test.tsx`,
   `HrReviewForm.test.tsx`, `ApprovalForm.test.tsx`): each renders its section's fields, exercises
@@ -276,7 +319,9 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
 - **Admin** (`SYSTEM_ADMIN`): `/admin/leave-types` (add / edit-name / deactivate / up-down reorder),
   `/admin/holidays` (add with a recurring-holiday checkbox / delete), `/admin/users` (list +
   create + inline role/active edit), `/admin/organization` (departments/sections/units/stations —
-  list + create + active toggle), `/admin/reports` (filtered CSV/XLSX export download).
+  list + create + active toggle), `/admin/reports` (filtered CSV/XLSX export download),
+  `/admin/leave-policies` (list + create/edit + delete tenure-banded entitlement rules — added
+  phase 3, see "Phase 3 additions" below).
 
 No digital signature capture, DSMS integration, or in-app PDF viewer was built — signature areas are
 the backend's PDF-generation concern; the frontend only offers a "Download PDF" action that opens
@@ -354,8 +399,10 @@ download (see below, which can't go through RTK Query since it streams a blob).
   new `Department` resource) per `/API.md`'s Section A field list — the admin org-structure CRUD
   and this filter are not cross-wired (picking a department in the filter is a text match, not a
   dropdown of the new `/api/departments/` resource).
-- No drag-and-drop for leave-type reorder — up/down buttons only (no bulk-reorder endpoint exists
-  to justify DnD's extra complexity/dependency).
+- ~~No drag-and-drop for leave-type reorder~~ — the up/down buttons now call the bulk
+  `POST /api/leave-types/reorder/` endpoint (added by BACKEND this round) instead of two sequential
+  `PATCH`es; still no drag-and-drop UI, just resolved the "no bulk endpoint" gap. See "Phase 3
+  additions" above.
 - Admin org-structure screens (`/admin/organization`) offer list/create/toggle-active only, no full
   edit-all-fields form (e.g. renaming a station's address) — add if the backend confirms a stable
   field set is unlikely to change further.
@@ -376,7 +423,6 @@ download (see below, which can't go through RTK Query since it streams a blob).
   query param (API.md doesn't document a free-text search filter on the list endpoint).
 - **`RETURNED_TO_HOD` HR-return action, and `PDF_GENERATED → COMPLETED → ARCHIVED`** transitions —
   not exposed as endpoints per API.md's own deferred list, so no frontend UI calls them either.
-- Leave type reorder UI (no bulk-reorder endpoint documented).
 - `features/users`, `features/departments`, `features/notifications` (beyond the unread-count UI
   slice), `features/dashboard` folders are scaffolded but empty. API.md does document
   `/api/users/`, `/api/departments/`, `/api/sections/`, `/api/units/`, `/api/stations/`, and

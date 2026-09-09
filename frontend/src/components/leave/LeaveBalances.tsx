@@ -43,6 +43,7 @@ export function LeaveBalances({ employeeId, title = "Leave Balances" }: { employ
               <th className="py-2 pr-4 font-medium">Leave Type</th>
               <th className="py-2 pr-4 font-medium">Period</th>
               <th className="py-2 pr-4 font-medium">Balance (days)</th>
+              <th className="py-2 pr-4 font-medium">Entitlement</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -50,7 +51,20 @@ export function LeaveBalances({ employeeId, title = "Leave Balances" }: { employ
               <tr key={b.id}>
                 <td className="py-2 pr-4">{leaveTypeName(b.leave_type)}</td>
                 <td className="py-2 pr-4">{b.period}</td>
-                <td className="py-2 pr-4 font-medium">{b.balance_days}</td>
+                <td className="py-2 pr-4 font-medium">{b.balance_days ?? b.remaining}</td>
+                <td className="py-2 pr-4">
+                  {b.entitlement ?? "—"}
+                  {b.is_entitlement_overridden ? (
+                    <span
+                      className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800"
+                      title={`Policy-computed entitlement is ${b.computed_entitlement ?? "unknown"} days; this balance's entitlement has been manually overridden.`}
+                    >
+                      Overridden (policy: {b.computed_entitlement ?? "?"})
+                    </span>
+                  ) : b.computed_entitlement !== undefined ? (
+                    <span className="ml-2 text-xs text-gray-400">(policy-derived)</span>
+                  ) : null}
+                </td>
               </tr>
             ))}
           </tbody>

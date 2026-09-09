@@ -39,6 +39,7 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
   ],
   SYSTEM_ADMIN: [
     { label: "Leave Types", href: "/admin/leave-types" },
+    { label: "Leave Policies", href: "/admin/leave-policies" },
     { label: "Holidays", href: "/admin/holidays" },
     { label: "Users", href: "/admin/users" },
     { label: "Organization", href: "/admin/organization" },
