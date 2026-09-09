@@ -1,15 +1,16 @@
 """
 Reporting / export endpoints (spec section 35): leave applications filtered
-by date/department/station/leave-type/status, exportable as CSV or Excel.
+by date/department/station/leave-type/status, exportable as CSV, Excel or
+PDF.
 
 Restricted to roles with organization-wide visibility (HR_ADMIN,
 AUTHORIZING_OFFICER, SYSTEM_ADMIN) — the same set that already sees the
 org-wide leave-applications list (see `permissions.visible_queryset_for`).
-PDF export is deferred (see API.md).
 """
 import csv
 
 from django.http import HttpResponse
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.permissions import IsAuthenticated
@@ -125,15 +126,17 @@ class LeaveApplicationReportView(APIView):
 
     def get(self, request):
         export_format = (request.query_params.get('format') or 'csv').lower()
-        if export_format not in ('csv', 'xlsx'):
-            raise ValidationError({'format': 'Must be "csv" or "xlsx".'})
+        if export_format not in ('csv', 'xlsx', 'pdf'):
+            raise ValidationError({'format': 'Must be "csv", "xlsx" or "pdf".'})
 
         queryset = _filtered_queryset(request.query_params)
         headers = [label for _field, label in REPORT_COLUMNS]
 
         if export_format == 'csv':
             return self._csv_response(queryset, headers)
-        return self._xlsx_response(queryset, headers)
+        if export_format == 'xlsx':
+            return self._xlsx_response(queryset, headers)
+        return self._pdf_response(queryset, request.query_params)
 
     def _csv_response(self, queryset, headers):
         response = HttpResponse(content_type='text/csv')
@@ -166,4 +169,95 @@ class LeaveApplicationReportView(APIView):
         )
         response['Content-Disposition'] = 'attachment; filename="leave-applications.xlsx"'
         wb.save(response)
+        return response
+
+    def _pdf_response(self, queryset, query_params):
+        import io
+
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle('ReportTitle', parent=styles['Title'], fontSize=14, spaceAfter=6)
+        meta_style = ParagraphStyle('ReportMeta', parent=styles['Normal'], fontSize=8.5, textColor=colors.grey, spaceAfter=2)
+        cell_style = ParagraphStyle('ReportCell', parent=styles['Normal'], fontSize=7.5, leading=9)
+        header_cell_style = ParagraphStyle('ReportHeaderCell', parent=styles['Normal'], fontSize=7.5, leading=9, textColor=colors.white)
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer, pagesize=landscape(A4),
+            leftMargin=1 * cm, rightMargin=1 * cm, topMargin=1 * cm, bottomMargin=1 * cm,
+        )
+        elements = [
+            Paragraph('NAOT Digital Leave Management System', title_style),
+            Paragraph('Leave Applications Report', meta_style),
+            Paragraph(
+                f'Generated: {timezone.now().strftime("%Y-%m-%d %H:%M:%S")} UTC',
+                meta_style,
+            ),
+        ]
+
+        applied_filters = {
+            key: value for key, value in query_params.items()
+            if key != 'format' and value
+        }
+        if applied_filters:
+            filters_text = '; '.join(f'{k}={v}' for k, v in applied_filters.items())
+        else:
+            filters_text = 'None'
+        elements.append(Paragraph(f'Filters: {filters_text}', meta_style))
+        elements.append(Spacer(1, 0.4 * cm))
+
+        table_columns = [
+            ('application_number', 'App. No.'),
+            ('employee__full_name', 'Employee'),
+            ('leave_type__name', 'Leave Type'),
+            ('start_date', 'Start Date'),
+            ('last_date', 'Last Date'),
+            ('total_working_days', 'Working Days'),
+            ('status', 'Status'),
+        ]
+        header_row = [Paragraph(label, header_cell_style) for _field, label in table_columns]
+        rows = [header_row]
+        count = 0
+        for application in queryset.iterator():
+            count += 1
+            row = []
+            for field_path, _label in table_columns:
+                value = application
+                for part in field_path.split('__'):
+                    if value is None:
+                        break
+                    value = getattr(value, part, None)
+                row.append(Paragraph('' if value is None else str(value), cell_style))
+            rows.append(row)
+
+        if count == 0:
+            elements.append(Paragraph('No matching applications.', styles['Normal']))
+        else:
+            table = Table(rows, repeatRows=1)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f2937')),
+                ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.whitesmoke]),
+                ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(table)
+            elements.append(Spacer(1, 0.3 * cm))
+            elements.append(Paragraph(f'Total applications: {count}', meta_style))
+
+        doc.build(elements)
+        pdf_bytes = buffer.getvalue()
+
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="leave-applications.pdf"'
         return response

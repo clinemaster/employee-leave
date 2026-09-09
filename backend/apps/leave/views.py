@@ -1,5 +1,7 @@
+from django.db import transaction
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -33,6 +35,50 @@ class LeaveTypeViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
     queryset = LeaveType.objects.filter(deleted_at__isnull=True)
     serializer_class = LeaveTypeSerializer
     filterset_fields = ['is_active']
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """
+        POST /api/leave-types/reorder/
+        Body: `[{"id": 1, "sort_order": 0}, {"id": 2, "sort_order": 1}, ...]`
+        SYSTEM_ADMIN only (enforced by ReadAllWriteAdminMixin.get_permissions,
+        since 'reorder' isn't 'list'/'retrieve'). Atomic, all-or-nothing:
+        validates every id exists (among non-deleted LeaveTypes) and that
+        there are no duplicate ids before writing anything; a single invalid
+        entry rejects the whole request with 400 and leaves sort_order
+        untouched. Returns the reordered list.
+        """
+        payload = request.data
+        if not isinstance(payload, list) or not payload:
+            raise ValidationError('Expected a non-empty list of {"id", "sort_order"} objects.')
+
+        entries = []
+        seen_ids = set()
+        for item in payload:
+            if not isinstance(item, dict) or 'id' not in item or 'sort_order' not in item:
+                raise ValidationError('Each entry must be an object with "id" and "sort_order".')
+            try:
+                type_id = int(item['id'])
+                sort_order = int(item['sort_order'])
+            except (TypeError, ValueError):
+                raise ValidationError('"id" and "sort_order" must be integers.')
+            if type_id in seen_ids:
+                raise ValidationError(f'Duplicate id: {type_id}.')
+            seen_ids.add(type_id)
+            entries.append((type_id, sort_order))
+
+        existing = LeaveType.objects.filter(deleted_at__isnull=True, id__in=seen_ids)
+        existing_ids = set(existing.values_list('id', flat=True))
+        missing_ids = seen_ids - existing_ids
+        if missing_ids:
+            raise ValidationError(f'Unknown leave type id(s): {sorted(missing_ids)}.')
+
+        with transaction.atomic():
+            for type_id, sort_order in entries:
+                LeaveType.objects.filter(id=type_id).update(sort_order=sort_order)
+
+        reordered = LeaveType.objects.filter(id__in=seen_ids).order_by('sort_order', 'name')
+        return Response(LeaveTypeSerializer(reordered, many=True).data)
 
 
 class HolidayViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):

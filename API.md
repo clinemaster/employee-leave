@@ -46,6 +46,31 @@ whose queue their applications land in).
 - `GET|POST /api/leave-types/`, `.../{id}/` — `{id, name, code, is_active, sort_order}`
 - `GET|POST /api/holidays/`, `.../{id}/` — `{id, date, name, is_recurring}`
 
+### POST /api/leave-types/reorder/
+SYSTEM_ADMIN only. Bulk-updates `sort_order` for multiple leave types in one
+atomic request (replaces sequential per-row `PATCH` calls from the frontend
+drag-reorder UI).
+
+Body: a non-empty JSON array of `{"id": <int>, "sort_order": <int>}` objects,
+e.g.:
+```json
+[{"id": 3, "sort_order": 0}, {"id": 1, "sort_order": 1}, {"id": 2, "sort_order": 2}]
+```
+Response `200`: the reordered `LeaveTypeSerializer` list (ordered by the new
+`sort_order`, ties by name), e.g.:
+```json
+[
+  {"id": 3, "name": "Sick Leave", "code": "SICK", "is_active": true, "sort_order": 0},
+  {"id": 1, "name": "Annual Leave", "code": "ANNUAL", "is_active": true, "sort_order": 1},
+  {"id": 2, "name": "Maternity Leave", "code": "MATERNITY", "is_active": true, "sort_order": 2}
+]
+```
+Validation (all `400`, nothing written on failure — atomic, all-or-nothing):
+empty/non-list body, an entry missing `id`/`sort_order` or with non-integer
+values, a duplicate `id` within the request, or an `id` that doesn't match
+an existing (non-deleted) `LeaveType`. `403` for any role other than
+SYSTEM_ADMIN.
+
 ## Working-days preview
 
 ### POST /api/working-days-preview/
@@ -254,12 +279,20 @@ queries per status bucket (no N+1; a handful of aggregate queries per call).
 
 ## Reports / exports
 
-### GET /api/reports/leave-applications/?format=csv|xlsx&...filters
+### GET /api/reports/leave-applications/?format=csv|xlsx|pdf&...filters
 HR_ADMIN, AUTHORIZING_OFFICER, SYSTEM_ADMIN only (403 for everyone else).
-Streams a CSV or Excel (`.xlsx`, via `openpyxl`) export of leave applications
-(one row per application: application number, employee, check number,
-department, section, unit, station, leave type, status, start/last date,
-working days, submitted/created/updated timestamps).
+Streams a CSV, Excel (`.xlsx`, via `openpyxl`) or PDF (via `reportlab`)
+export of leave applications.
+
+- `csv`/`xlsx`: one row per application — application number, employee,
+  check number, department, section, unit, station, leave type, status,
+  start/last date, working days, submitted/created/updated timestamps.
+- `pdf`: a landscape A4 tabular report — title, the applied filters (as
+  `key=value` pairs, or "None"), a generation timestamp, then one row per
+  matching application (application number, employee name, leave type,
+  start/last date, working days, status) and a total count footer. An empty
+  result set still produces a valid single-page PDF with a "No matching
+  applications." message instead of a table.
 
 Query filters (all optional, combinable): `start_date` (`start_date>=`),
 `end_date` (`last_date<=`), `department`, `station`, `leave_type`, `status`,
@@ -268,9 +301,6 @@ Query filters (all optional, combinable): `start_date` (`start_date>=`),
 Note: `format` here is our own filter, not DRF's URL-format-suffix
 convention — the view pins `content_negotiation_class` to ignore the
 built-in renderer-suffix lookup so the two don't collide.
-
-PDF export of a report is deferred (see "Deferred" below) — CSV/XLSX cover
-the spec's minimum bar.
 
 ## Status enum (`LeaveApplication.status`)
 
@@ -291,10 +321,9 @@ action is still logged separately for traceability).
   images at `backend/apps/documents/assets/*.png`.
 - Digital signatures / DSMS / cryptographic signing — explicitly out of
   scope; PDF signature areas are blank lines only.
-- PDF export of the leave-applications report (`/api/reports/...`) — only
-  CSV and XLSX are implemented.
 - Bulk operations (e.g. bulk-approve, bulk-archive) beyond the single-row
-  workflow actions.
+  workflow actions. (`POST /api/leave-types/reorder/` is the one exception —
+  see "Leave types & holidays" above.)
 - `opening_balance`/`entitlement` on `LeaveBalance` are now auto-derived on
   first creation via the `LeavePolicy` engine (tenure-band or flat rules per
   leave type, admin-managed via `/api/leave-policies/`), with a
