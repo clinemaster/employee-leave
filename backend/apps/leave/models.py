@@ -237,6 +237,56 @@ class LeaveDependant(models.Model):
         return f'{self.name} ({self.relationship})'
 
 
+class LeavePolicy(models.Model):
+    """
+    Admin-configurable rule mapping a LeaveType (+ optional tenure band) to
+    an annual entitlement in days (spec section 9: leave types/entitlements
+    are configurable, not hardcoded).
+
+    `min_years_of_service`/`max_years_of_service` are optional (nullable)
+    bounds on the employee's tenure, in whole years, computed from
+    `User.date_of_first_appointment`. A flat, non-tenure-banded policy for a
+    leave type simply leaves both null. When multiple policies exist for the
+    same leave type, the most specific (tenure-banded) ones should be
+    ordered first via `sort_order` — matching is first-match-wins, see
+    `apps/leave/entitlement.py`.
+    """
+    leave_type = models.ForeignKey(
+        LeaveType, on_delete=models.CASCADE, related_name='policies'
+    )
+    min_years_of_service = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Inclusive lower bound on years of service. Leave blank for no lower bound.',
+    )
+    max_years_of_service = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Inclusive upper bound on years of service. Leave blank for no upper bound.',
+    )
+    annual_entitlement = models.DecimalField(
+        max_digits=6, decimal_places=2,
+        help_text='Annual leave entitlement in days granted by this rule.',
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(
+        default=0,
+        help_text='Lower sort_order is matched first. Put more specific (tenure-banded) rules before flat ones.',
+    )
+    description = models.CharField(max_length=255, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+        verbose_name_plural = 'Leave policies'
+
+    def __str__(self):
+        band = ''
+        if self.min_years_of_service is not None or self.max_years_of_service is not None:
+            band = f' [{self.min_years_of_service or 0}-{self.max_years_of_service if self.max_years_of_service is not None else "+"} yrs]'
+        return f'{self.leave_type}{band}: {self.annual_entitlement} days'
+
+
 class LeaveBalance(models.Model):
     """Per-employee, per-leave-type, per-period balance ledger."""
     employee = models.ForeignKey(

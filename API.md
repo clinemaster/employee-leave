@@ -11,6 +11,8 @@ All list endpoints are paginated (`PageNumberPagination`, `page_size=25`):
 ### POST /api/auth/login/
 Body: `{"username": "...", "password": "..."}`
 Response: `{"access": "...", "refresh": "...", "user": {UserSerializer}}`
+Throttled (default 5/min per client, env `THROTTLE_RATE_LOGIN`) — brute-force
+protection. Returns `429` once exceeded, regardless of credential validity.
 
 ### POST /api/auth/refresh/
 Body: `{"refresh": "..."}` -> `{"access": "..."}`
@@ -55,6 +57,31 @@ Server-authoritative: excludes Saturdays/Sundays and `Holiday` dates
 exact same calculation used when an application is created/updated
 (`total_working_days` on the application).
 
+## Leave Policies (annual entitlement rules)
+
+`GET|POST /api/leave-policies/`, `GET|PUT|PATCH|DELETE
+/api/leave-policies/{id}/` — SYSTEM_ADMIN only (read and write; 403 for
+everyone else, including HR_ADMIN). Filter: `?leave_type=&is_active=`.
+
+`LeavePolicySerializer` fields: `id, leave_type, leave_type_name,
+min_years_of_service, max_years_of_service, annual_entitlement, is_active,
+sort_order, description, created_at, updated_at`.
+
+Admin-configurable rules that drive the entitlement engine (spec section 9's
+"leave types are configurable" requirement): each rule maps a `leave_type` +
+optional tenure band (`min_years_of_service`/`max_years_of_service`,
+inclusive; leave both blank for a flat rule that applies regardless of
+tenure) to an `annual_entitlement` in days. For a given employee +
+leave_type, the first active rule (ordered by `sort_order`, ties by `id`)
+whose band contains the employee's years of service — computed from
+`accounts.User.date_of_first_appointment` — is used. An employee with no
+`date_of_first_appointment` only matches flat (un-banded) rules. If nothing
+matches, the system falls back to `LEAVE_DEFAULT_ENTITLEMENT_DAYS`
+(env-configurable, default `28`) — this never errors, even with zero
+policies configured. Implementation: `apps/leave/entitlement.py`.
+`POST`/`PUT`/`PATCH` reject `max_years_of_service < min_years_of_service`
+with `400`.
+
 ## Leave Balances
 
 `GET /api/leave-balances/` — employees see only their own; HR_ADMIN,
@@ -66,12 +93,23 @@ applications whose Section C decision (`approval.approved`) is `True`;
 `pending` = sum of `total_working_days` across applications currently
 in-flight (`PENDING_HOD_REVIEW` through `PENDING_AUTHORIZATION`, plus
 `HOD_RECOMMENDED`/`RETURNED_TO_HOD`); `remaining = opening_balance +
-entitlement - taken - pending`. `opening_balance`/`entitlement` are still
-set by HR/admin (there's no "annual entitlement" source of truth to derive
-them from). Recomputed automatically after every workflow transition on the
-touched employee/leave_type/period (`apps/leave/workflow.py` calls
+entitlement - taken - pending`. Recomputed automatically after every
+workflow transition on the touched employee/leave_type/period
+(`apps/leave/workflow.py` calls
 `apps/leave/balances.py:recalculate_for_application`), so reads are always
 current — no cron/background job needed.
+
+`opening_balance`/`entitlement` are now auto-populated from the
+`LeavePolicy` engine the first time a `LeaveBalance` row is created for an
+employee/leave_type/period (`entitlement` from the matched policy or the
+system default; `opening_balance` defaults to `0`, since there's no
+prior-period carry-over yet). HR/admin may still hand-edit either field
+(e.g. via Django admin or a direct update) after creation — recalculation
+only ever touches `taken`/`pending`/`remaining` on an existing row, so a
+manual override is never clobbered. The list response additionally
+includes two read-only fields for comparison: `computed_entitlement` (what
+the policy engine would currently compute, live) and
+`is_entitlement_overridden` (`entitlement != computed_entitlement`).
 
 ### POST /api/leave-balances/recalculate/
 Body: `{employee?, leave_type?, period?}` (all optional). Force-recomputes
@@ -152,8 +190,26 @@ transaction).
 
 ### GET /api/leave-applications/{id}/documents/
 Returns `[{id, application, document_type, file, generated_by, is_active,
-created_at}, ...]` — generated PDFs (and any future supporting
-attachments) for this application.
+created_at}, ...]` — generated PDFs and supporting attachments for this
+application. `file` is a path under `MEDIA_URL`, only actually served by
+Django when `DEBUG=True`; in production, fetch the bytes via the download
+endpoint below instead.
+
+### POST /api/leave-applications/{id}/upload-document/
+Multipart, field name `file`. Applicant-only, own application only, only
+while status is `DRAFT` or `RETURNED_TO_EMPLOYEE`. One file per call
+(creates a `SUPPORTING_ATTACHMENT` `LeaveDocument`; call again to attach
+more). Validates file extension (`.pdf/.jpg/.jpeg/.png`), file-signature
+(magic bytes, to catch a mislabeled file), and size (`FILE_SIZE_LIMIT` env
+var, default 5MB) — see SECURITY.md. `400` on any validation failure,
+`403` if the application isn't the caller's own.
+Throttled (default 20/min, `THROTTLE_RATE_DOCUMENT_UPLOAD`).
+
+### GET /api/leave-applications/{id}/documents/{document_id}/download/
+Streams the file's bytes (`Content-Disposition: attachment`). Re-checks the
+same object-level permission as every other application endpoint — the only
+supported way to fetch a document; there is no direct/public file URL in
+production.
 
 ### GET /api/leave-applications/{id}/audit-trail/
 Returns `[{id, application, user, user_name, role, action,
@@ -239,7 +295,13 @@ action is still logged separately for traceability).
   CSV and XLSX are implemented.
 - Bulk operations (e.g. bulk-approve, bulk-archive) beyond the single-row
   workflow actions.
-- `opening_balance`/`entitlement` on `LeaveBalance` are still set manually
-  by HR/admin — there's no policy engine to derive annual entitlement by
-  role/grade/service length. `taken`/`pending`/`remaining` are real,
-  computed values (see "Leave Balances" above).
+- `opening_balance`/`entitlement` on `LeaveBalance` are now auto-derived on
+  first creation via the `LeavePolicy` engine (tenure-band or flat rules per
+  leave type, admin-managed via `/api/leave-policies/`), with a
+  system-default fallback — see "Leave Policies" / "Leave Balances" above.
+  HR/admin may still override afterwards. A UI for managing `LeavePolicy`
+  rows is a frontend follow-up (not built here — admins use
+  `/api/leave-policies/` directly or Django admin for now). Bands are
+  currently keyed only on tenure; role/grade-based entitlement bands are not
+  modeled (the `LeavePolicy` schema could be extended with a `role` field
+  later without breaking existing rows).

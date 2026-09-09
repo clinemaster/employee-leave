@@ -15,6 +15,7 @@ type/year, matching LeaveBalance.Meta.unique_together.
 """
 from django.db.models import Sum
 
+from .entitlement import compute_entitlement
 from .models import ApplicationStatus as S
 from .models import LeaveApplication, LeaveBalance
 
@@ -31,8 +32,13 @@ def recalculate_balance(employee, leave_type, period):
     """
     Recompute (and persist) the LeaveBalance row for one
     employee/leave_type/period from LeaveApplication history. Creates the
-    row (with zero opening_balance/entitlement, to be set separately by
-    HR/admin) if it doesn't exist yet. Returns the LeaveBalance instance.
+    row if it doesn't exist yet, auto-populating `entitlement` (and
+    `opening_balance`, which defaults to the fresh entitlement for a
+    brand-new record) from the LeavePolicy engine (`apps/leave/
+    entitlement.py`) rather than requiring HR to hand-enter them first.
+    HR/admin may still override either field afterwards — this only fills
+    them in on first creation, never overwrites an existing non-empty
+    value. Returns the LeaveBalance instance.
     """
     year = str(period)
     apps_qs = LeaveApplication.objects.filter(
@@ -45,9 +51,20 @@ def recalculate_balance(employee, leave_type, period):
         s=Sum('total_working_days')
     )['s'] or 0
 
-    balance, _ = LeaveBalance.objects.get_or_create(
+    balance, created = LeaveBalance.objects.get_or_create(
         employee=employee, leave_type=leave_type, period=year,
     )
+    if created:
+        # Resolve the FK ids (employee/leave_type may be passed as ids) to
+        # real instances for the policy engine.
+        employee_obj = balance.employee
+        leave_type_obj = balance.leave_type
+        computed_entitlement = compute_entitlement(employee_obj, leave_type_obj, period=year)
+        balance.entitlement = computed_entitlement
+        # opening_balance defaults to 0 (no prior-period carry-over exists
+        # yet for a brand-new record) — HR can override for actual
+        # carry-over amounts.
+        balance.opening_balance = balance.opening_balance or 0
     balance.taken = taken
     balance.pending = pending
     balance.remaining = (balance.opening_balance or 0) + (balance.entitlement or 0) - taken - pending

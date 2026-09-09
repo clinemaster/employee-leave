@@ -1,8 +1,9 @@
 from rest_framework import serializers
 
+from .entitlement import compute_entitlement
 from .models import (
     Holiday, LeaveApplication, LeaveApproval, LeaveBalance, LeaveDependant,
-    LeaveHRReview, LeaveRecommendation, LeaveType,
+    LeaveHRReview, LeavePolicy, LeaveRecommendation, LeaveType,
 )
 from .workingdays import calculate_working_days
 
@@ -153,14 +154,49 @@ class WorkflowActionSerializer(serializers.Serializer):
     signature_designation = serializers.CharField(required=False, allow_blank=True, default='')
 
 
+class LeavePolicySerializer(serializers.ModelSerializer):
+    leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
+
+    class Meta:
+        model = LeavePolicy
+        fields = [
+            'id', 'leave_type', 'leave_type_name', 'min_years_of_service',
+            'max_years_of_service', 'annual_entitlement', 'is_active',
+            'sort_order', 'description', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        min_y = attrs.get('min_years_of_service', getattr(self.instance, 'min_years_of_service', None))
+        max_y = attrs.get('max_years_of_service', getattr(self.instance, 'max_years_of_service', None))
+        if min_y is not None and max_y is not None and max_y < min_y:
+            raise serializers.ValidationError(
+                'max_years_of_service cannot be less than min_years_of_service.'
+            )
+        return attrs
+
+
 class LeaveBalanceSerializer(serializers.ModelSerializer):
+    computed_entitlement = serializers.SerializerMethodField()
+    is_entitlement_overridden = serializers.SerializerMethodField()
+
     class Meta:
         model = LeaveBalance
         fields = [
             'id', 'employee', 'leave_type', 'period', 'opening_balance',
             'entitlement', 'taken', 'pending', 'remaining',
+            'computed_entitlement', 'is_entitlement_overridden',
         ]
         read_only_fields = ['id']
+
+    def get_computed_entitlement(self, obj):
+        """What the policy engine would currently compute for this
+        employee/leave_type — for comparison against the stored (possibly
+        HR-overridden) `entitlement` value."""
+        return compute_entitlement(obj.employee, obj.leave_type, period=obj.period)
+
+    def get_is_entitlement_overridden(self, obj):
+        return obj.entitlement != self.get_computed_entitlement(obj)
 
 
 class WorkingDaysPreviewSerializer(serializers.Serializer):

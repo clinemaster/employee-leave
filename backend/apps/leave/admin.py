@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     LeaveType, Holiday, LeaveApplication, LeaveDependant,
     LeaveRecommendation, LeaveHRReview, LeaveApproval, LeaveBalance,
+    LeavePolicy,
 )
 
 
@@ -54,6 +55,16 @@ class LeaveHRReviewAdmin(admin.ModelAdmin):
 @admin.register(LeaveApproval)
 class LeaveApprovalAdmin(admin.ModelAdmin):
     list_display = ('id', 'reviewer', 'approved', 'signature_date')
+
+
+@admin.register(LeavePolicy)
+class LeavePolicyAdmin(admin.ModelAdmin):
+    list_display = (
+        'leave_type', 'min_years_of_service', 'max_years_of_service',
+        'annual_entitlement', 'is_active', 'sort_order',
+    )
+    list_filter = ('leave_type', 'is_active')
+    ordering = ('leave_type', 'sort_order')
 
 
 @admin.register(LeaveBalance)

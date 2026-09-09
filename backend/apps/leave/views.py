@@ -2,20 +2,21 @@ from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.audit.models import AuditLog
 from apps.documents.models import LeaveDocument
 
-from .models import Holiday, LeaveApplication, LeaveBalance, LeaveType
+from .models import Holiday, LeaveApplication, LeaveBalance, LeavePolicy, LeaveType
 from .permissions import (
     CanAccessLeaveApplication, IsSystemAdmin, assert_can_edit_fields,
     can_view_application, visible_queryset_for,
 )
 from .serializers import (
     HolidaySerializer, LeaveApplicationSerializer, LeaveApplicationWriteSerializer,
-    LeaveBalanceSerializer, LeaveTypeSerializer, WorkflowActionSerializer,
-    WorkingDaysPreviewSerializer,
+    LeaveBalanceSerializer, LeavePolicySerializer, LeaveTypeSerializer,
+    WorkflowActionSerializer, WorkingDaysPreviewSerializer,
 )
 from .workflow import WorkflowError, perform_transition
 from .workingdays import calculate_working_days
@@ -38,6 +39,18 @@ class HolidayViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
     queryset = Holiday.objects.all()
     serializer_class = HolidaySerializer
     filterset_fields = ['is_recurring']
+
+
+class LeavePolicyViewSet(viewsets.ModelViewSet):
+    """
+    Admin-only CRUD for annual-entitlement policy rules (spec section 9's
+    configurable leave types). GET|POST /api/leave-policies/,
+    GET|PUT|PATCH|DELETE /api/leave-policies/{id}/.
+    """
+    queryset = LeavePolicy.objects.select_related('leave_type').all()
+    serializer_class = LeavePolicySerializer
+    permission_classes = [IsSystemAdmin]
+    filterset_fields = ['leave_type', 'is_active']
 
 
 class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -149,6 +162,13 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     """
     permission_classes = [IsAuthenticated, CanAccessLeaveApplication]
     filterset_fields = ['status', 'leave_type', 'employee']
+    # Declared so the `throttle_scope=...` kwarg on individual @action
+    # decorators (generate_pdf, upload_document) is a valid DRF initkwarg —
+    # DRF's ViewSet.as_view() requires hasattr(cls, key) for every kwarg an
+    # @action passes through. Unused at the class level (each action
+    # overrides throttle_classes/throttle_scope itself); default-permissive
+    # value only, not a design change to the throttling scheme.
+    throttle_scope = None
 
     def get_queryset(self):
         qs = LeaveApplication.objects.select_related(
@@ -261,7 +281,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         """DENIED or COMPLETED -> ARCHIVED (terminal, housekeeping)."""
         return self._do_transition(request, pk, 'archive')
 
-    @action(detail=True, methods=['post'], url_path='generate-pdf')
+    @action(
+        detail=True, methods=['post'], url_path='generate-pdf',
+        throttle_classes=[ScopedRateThrottle], throttle_scope='pdf_export',
+    )
     def generate_pdf(self, request, pk=None):
         application = self.get_object()
         from apps.documents.pdf import generate_leave_application_pdf
@@ -276,6 +299,67 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         application = self.get_object()
         docs = application.documents.filter(is_active=True)
         return Response(_LeaveDocumentSerializer(docs, many=True).data)
+
+    @action(
+        detail=True, methods=['post'], url_path='upload-document',
+        throttle_classes=[ScopedRateThrottle], throttle_scope='document_upload',
+    )
+    def upload_document(self, request, pk=None):
+        """
+        POST /api/leave-applications/{id}/upload-document/ (multipart, field
+        name `file`). Employee-only, own application, DRAFT/RETURNED states —
+        a single supporting-attachment upload per call. Validates extension,
+        magic bytes and size server-side (apps.documents.uploads); see
+        SECURITY.md for the details.
+        """
+        application = self.get_object()
+        if application.employee_id != request.user.id:
+            return Response(
+                {'detail': 'You may only attach documents to your own application.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if application.status not in ('DRAFT', 'RETURNED_TO_EMPLOYEE'):
+            return Response(
+                {'detail': 'Documents can only be attached while the application is DRAFT or RETURNED_TO_EMPLOYEE.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'detail': 'No file provided (expected multipart field "file").'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.documents.uploads import UploadValidationError, validate_upload
+        try:
+            validate_upload(upload)
+        except UploadValidationError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        document = LeaveDocument.objects.create(
+            application=application,
+            document_type=LeaveDocument.DocumentType.SUPPORTING_ATTACHMENT,
+            generated_by=request.user,
+        )
+        document.file.save(upload.name, upload, save=True)
+        return Response(_LeaveDocumentSerializer(document).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['get'], url_path=r'documents/(?P<document_id>[^/.]+)/download')
+    def download_document(self, request, pk=None, document_id=None):
+        """
+        GET /api/leave-applications/{id}/documents/{document_id}/download/
+        Authenticated, permission-rechecked download — the only supported
+        way to fetch a document's bytes. Files are never served directly
+        from MEDIA_URL in production (see DEPLOYMENT.md §6).
+        """
+        application = self.get_object()  # re-applies CanAccessLeaveApplication (IDOR check)
+        document = application.documents.filter(pk=document_id, is_active=True).first()
+        if document is None or not document.file:
+            return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        from django.http import FileResponse
+        document.file.open('rb')
+        response = FileResponse(
+            document.file, as_attachment=True, filename=document.file.name.rsplit('/', 1)[-1],
+        )
+        return response
 
     @action(detail=True, methods=['get'], url_path='audit-trail')
     def audit_trail(self, request, pk=None):
