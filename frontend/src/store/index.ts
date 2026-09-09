@@ -4,14 +4,17 @@ import authReducer from "@/store/slices/authSlice";
 import uiReducer from "@/store/slices/uiSlice";
 import notificationReducer from "@/store/slices/notificationSlice";
 
-export const makeStore = () =>
+const rootReducer = {
+  auth: authReducer,
+  ui: uiReducer,
+  notifications: notificationReducer,
+  [baseApi.reducerPath]: baseApi.reducer,
+};
+
+export const makeStore = (preloadedAuth?: ReturnType<typeof authReducer>) =>
   configureStore({
-    reducer: {
-      auth: authReducer,
-      ui: uiReducer,
-      notifications: notificationReducer,
-      [baseApi.reducerPath]: baseApi.reducer,
-    },
+    reducer: rootReducer,
+    ...(preloadedAuth ? { preloadedState: { auth: preloadedAuth } } : {}),
     middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(baseApi.middleware),
   });
 

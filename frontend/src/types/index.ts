@@ -1,134 +1,141 @@
 // Core domain types for the NAOT Digital Leave Management System frontend.
-// NOTE: These shapes are our current best guess based on the project spec.
-// They are intentionally centralized here so that once the BACKEND agent
-// confirms exact field names / enum values, only this file (and lib/api/*)
-// need to change. Search for "TODO(api-confirm)" for places likely to shift.
+// Field names mirror the DRF serializers documented in /API.md (backend's
+// confirmed spec) verbatim — snake_case, matching the wire format, so no
+// case-conversion layer is needed. Do not rename fields to camelCase.
 
 export type Role =
   | "EMPLOYEE"
-  | "HOD"
-  | "HR"
+  | "HEAD_OF_DEPARTMENT"
+  | "HEAD_OF_SECTION"
+  | "HEAD_OF_UNIT"
+  | "HR_ADMIN"
   | "AUTHORIZING_OFFICER"
-  | "ADMIN";
+  | "SYSTEM_ADMIN";
+
+// Any of the three "line manager" roles that review Section B1.
+export const HOD_ROLES: Role[] = ["HEAD_OF_DEPARTMENT", "HEAD_OF_SECTION", "HEAD_OF_UNIT"];
 
 export interface User {
   id: number;
+  username: string;
+  full_name: string;
   email: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
+  official_email?: string | null;
   role: Role;
-  department?: string | null;
+  check_number?: string | null;
+  personnel_file_number?: string | null;
   designation?: string | null;
-  employeeNumber?: string | null;
-  isActive: boolean;
+  station?: string | null;
+  department?: string | null;
+  section?: string | null;
+  unit?: string | null;
+  manager?: number | null;
+  phone_number?: string | null;
+  date_of_first_appointment?: string | null;
+  is_active: boolean;
 }
 
 export type LeaveStatus =
   | "DRAFT"
   | "SUBMITTED"
-  | "RECOMMENDED"
-  | "RETURNED_BY_HOD"
-  | "VERIFIED"
-  | "RETURNED_BY_HR"
+  | "PENDING_HOD_REVIEW"
+  | "HOD_RECOMMENDED"
+  | "RETURNED_TO_EMPLOYEE"
+  | "PENDING_HR_REVIEW"
+  | "HR_VERIFIED"
+  | "RETURNED_TO_HOD"
+  | "PENDING_AUTHORIZATION"
   | "APPROVED"
-  | "DENIED";
-
-export type LeaveStage =
-  | "APPLICANT"
-  | "HOD"
-  | "HR"
-  | "AUTHORIZING_OFFICER"
-  | "COMPLETE";
-
-export type RecommendationDecision =
-  | "RECOMMEND"
-  | "RECOMMEND_WITH_CHANGES"
-  | "DO_NOT_RECOMMEND";
-
-export type ApprovalDecision = "APPROVE" | "DENY";
+  | "DENIED"
+  | "PDF_GENERATED"
+  | "COMPLETED"
+  | "ARCHIVED";
 
 export interface LeaveType {
   id: number;
-  code: string;
   name: string;
-  isActive: boolean;
-  order: number;
-  maxDaysPerYear?: number | null;
+  code: string;
+  is_active: boolean;
+  sort_order: number;
 }
 
 export interface Holiday {
   id: number;
-  name: string;
   date: string; // ISO date
+  name: string;
+  is_recurring: boolean;
+}
+
+export interface OrgUnit {
+  id: number;
+  name: string;
+  code: string;
+  is_active: boolean;
 }
 
 export interface LeaveDependant {
   id?: number;
-  fullName: string;
+  name: string;
   relationship: string;
-  dateOfBirth?: string | null;
+  date_of_birth?: string | null;
 }
 
 export interface LeaveRecommendation {
-  decision: RecommendationDecision;
+  recommended: boolean;
   comments?: string;
-  officerName?: string;
-  officerDesignation?: string;
-  date?: string;
+  signature_name?: string;
+  signature_designation?: string;
+  created_at?: string;
 }
 
 export interface HRReview {
-  leaveBalanceDays?: number;
-  daysRequested?: number;
-  balanceAfter?: number;
+  verified: boolean;
   comments?: string;
-  verifiedBy?: string;
-  date?: string;
+  signature_name?: string;
+  signature_designation?: string;
+  created_at?: string;
 }
 
 export interface ApprovalSection {
-  decision: ApprovalDecision;
-  travelAssistance?: boolean;
-  reason?: string; // required when DENY
-  approverName?: string;
-  approverDesignation?: string;
-  date?: string;
+  approved: boolean;
+  comments?: string;
+  signature_name?: string;
+  signature_designation?: string;
+  created_at?: string;
 }
 
+// Section A fields — editable by the applicant only, and only while
+// status is DRAFT or RETURNED_TO_EMPLOYEE (enforced server-side).
 export interface LeaveApplication {
   id: number;
-  applicant: User;
-  leaveType: LeaveType;
-  startDate: string;
-  endDate: string;
-  workingDays?: number;
-  reason?: string;
-  address?: string;
-  contactPhone?: string;
+  employee: number;
+  employee_name?: string;
+  vote_code?: string;
+  sub_vote?: string;
+  check_number?: string;
+  personnel_file?: string;
+  full_name: string;
+  designation: string;
+  station: string;
+  division_department: string;
+  phone_number?: string;
+  email?: string;
+  contact_address?: string;
+  leave_type: number;
+  leave_type_name?: string;
+  leave_number?: string;
+  travel_assistance: boolean;
+  start_date: string;
+  last_date: string;
   dependants: LeaveDependant[];
   status: LeaveStatus;
-  stage: LeaveStage;
-  hodRecommendation?: LeaveRecommendation | null;
-  hrReview?: HRReview | null;
+  recommendation?: LeaveRecommendation | null;
+  hr_review?: HRReview | null;
   approval?: ApprovalSection | null;
-  createdAt: string;
-  updatedAt: string;
-  submittedAt?: string | null;
-}
-
-export interface LeaveApplicationListItem {
-  id: number;
-  applicantName: string;
-  department?: string | null;
-  leaveTypeName: string;
-  startDate: string;
-  endDate: string;
-  workingDays?: number;
-  status: LeaveStatus;
-  stage: LeaveStage;
-  lastAction?: string | null;
-  updatedAt: string;
+  working_days_preview?: number;
+  total_working_days?: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -140,24 +147,39 @@ export interface PaginatedResponse<T> {
 
 export interface AuditLogEntry {
   id: number;
+  application: number;
+  user: number;
+  user_name: string;
+  role: Role;
   action: string;
-  actor: string;
+  previous_status: LeaveStatus | null;
+  new_status: LeaveStatus;
   timestamp: string;
-  notes?: string;
+  comments?: string;
 }
 
 export interface LeaveDocument {
   id: number;
-  name: string;
-  url: string;
-  createdAt: string;
+  application: number;
+  document_type: string;
+  file: string; // URL
+  generated_by: number;
+  is_active: boolean;
+  created_at: string;
 }
 
-export interface DashboardStats {
-  total: number;
-  draft: number;
-  pending: number;
-  approved: number;
-  denied: number;
-  returned: number;
+export interface NotificationItem {
+  id: number;
+  message: string;
+  is_read: boolean;
+  related_application: number | null;
+  created_at: string;
+}
+
+export interface LeaveBalance {
+  id: number;
+  employee: number;
+  leave_type: number;
+  period: string;
+  balance_days: number;
 }

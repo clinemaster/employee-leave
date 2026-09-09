@@ -1,14 +1,17 @@
 "use client";
 
-import { useRef, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Provider } from "react-redux";
-import { makeStore, type AppStore } from "@/store";
+import { makeStore } from "@/store";
+import { loadTokens } from "@/lib/auth/tokenStorage";
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const storeRef = useRef<AppStore | null>(null);
-  if (!storeRef.current) {
-    storeRef.current = makeStore();
-  }
+  const [store] = useState(() => {
+    const { accessToken, refreshToken } = loadTokens();
+    return makeStore(
+      accessToken ? { user: null, accessToken, refreshToken, isAuthenticated: true } : undefined
+    );
+  });
 
-  return <Provider store={storeRef.current}>{children}</Provider>;
+  return <Provider store={store}>{children}</Provider>;
 }

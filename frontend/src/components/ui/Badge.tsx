@@ -4,12 +4,18 @@ import type { LeaveStatus } from "@/types";
 const statusStyles: Record<LeaveStatus, string> = {
   DRAFT: "bg-gray-100 text-gray-700",
   SUBMITTED: "bg-blue-100 text-blue-700",
-  RECOMMENDED: "bg-indigo-100 text-indigo-700",
-  RETURNED_BY_HOD: "bg-amber-100 text-amber-700",
-  VERIFIED: "bg-teal-100 text-teal-700",
-  RETURNED_BY_HR: "bg-amber-100 text-amber-700",
+  PENDING_HOD_REVIEW: "bg-blue-100 text-blue-700",
+  HOD_RECOMMENDED: "bg-indigo-100 text-indigo-700",
+  RETURNED_TO_EMPLOYEE: "bg-amber-100 text-amber-700",
+  PENDING_HR_REVIEW: "bg-indigo-100 text-indigo-700",
+  HR_VERIFIED: "bg-teal-100 text-teal-700",
+  RETURNED_TO_HOD: "bg-amber-100 text-amber-700",
+  PENDING_AUTHORIZATION: "bg-teal-100 text-teal-700",
   APPROVED: "bg-green-100 text-green-700",
   DENIED: "bg-red-100 text-red-700",
+  PDF_GENERATED: "bg-green-100 text-green-700",
+  COMPLETED: "bg-green-100 text-green-700",
+  ARCHIVED: "bg-gray-100 text-gray-500",
 };
 
 export function StatusBadge({ status }: { status: LeaveStatus }) {

@@ -1,73 +1,57 @@
 import { baseApi } from "@/lib/api/baseApi";
 import type {
-  ApprovalDecision,
   AuditLogEntry,
-  DashboardStats,
   LeaveApplication,
-  LeaveApplicationListItem,
   LeaveDependant,
   LeaveDocument,
   PaginatedResponse,
-  RecommendationDecision,
 } from "@/types";
 
-// TODO(api-confirm): All paths below assume the documented convention
-// /api/leave-applications/... with workflow actions as POST sub-routes,
-// e.g. /api/leave-applications/{id}/submit/. Confirm exact paths, body
-// shapes and enum field names with the BACKEND agent, then update here.
-// Everything else (components, hooks) consumes only the exported hooks
-// below, so changes should stay localized to this file.
+// Matches /API.md "Leave Applications" section verbatim. Row-level access
+// (IDOR protection) and section-scoped edit enforcement happen server-side —
+// this file only shapes requests/responses.
 
 export interface LeaveApplicationListParams {
-  page?: number;
-  pageSize?: number;
   status?: string;
-  stage?: string;
-  search?: string;
-  department?: string;
+  leave_type?: number;
+  employee?: number;
+  page?: number;
 }
 
-interface CreateLeaveApplicationRequest {
-  leaveTypeId: number;
-  startDate: string;
-  endDate: string;
-  reason?: string;
-  address?: string;
-  contactPhone?: string;
+// Section A fields (see API.md) — the only fields an applicant may send on
+// create/update, and only while DRAFT or RETURNED_TO_EMPLOYEE.
+export interface SectionAFields {
+  vote_code?: string;
+  sub_vote?: string;
+  check_number?: string;
+  personnel_file?: string;
+  full_name: string;
+  designation: string;
+  station: string;
+  division_department: string;
+  phone_number?: string;
+  email?: string;
+  contact_address?: string;
+  leave_type: number;
+  leave_number?: string;
+  travel_assistance: boolean;
+  start_date: string;
+  last_date: string;
   dependants?: LeaveDependant[];
-  isDraft?: boolean;
 }
 
-type UpdateLeaveApplicationRequest = Partial<CreateLeaveApplicationRequest> & { id: number };
+type UpdateLeaveApplicationRequest = Partial<SectionAFields> & { id: number };
 
-interface RecommendRequest {
+// Workflow action bodies: { comments?, decision?, signature_name?, signature_designation? }
+interface WorkflowActionBody {
   id: number;
-  decision: RecommendationDecision;
   comments?: string;
-  officerName?: string;
-  officerDesignation?: string;
+  decision?: boolean; // used by recommend (recommended?) and verify (verified?)
+  signature_name?: string;
+  signature_designation?: string;
 }
 
-interface ReturnRequest {
-  id: number;
-  comments: string;
-}
-
-interface VerifyRequest {
-  id: number;
-  leaveBalanceDays?: number;
-  balanceAfter?: number;
-  comments?: string;
-}
-
-interface ApproveDenyRequest {
-  id: number;
-  decision: ApprovalDecision;
-  travelAssistance?: boolean;
-  reason?: string; // required when decision === "DENY"
-}
-
-function listTags(result?: PaginatedResponse<LeaveApplicationListItem>) {
+function listTags(result?: PaginatedResponse<LeaveApplication>) {
   const items = result?.results ?? [];
   return [
     ...items.map((item) => ({ type: "LeaveApplication" as const, id: item.id })),
@@ -77,7 +61,7 @@ function listTags(result?: PaginatedResponse<LeaveApplicationListItem>) {
 
 export const leaveApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getLeaveApplications: builder.query<PaginatedResponse<LeaveApplicationListItem>, LeaveApplicationListParams | void>({
+    getLeaveApplications: builder.query<PaginatedResponse<LeaveApplication>, LeaveApplicationListParams | void>({
       query: (params) => ({
         url: "leave-applications/",
         params: params ?? undefined,
@@ -90,7 +74,7 @@ export const leaveApi = baseApi.injectEndpoints({
       providesTags: (_result, _error, id) => [{ type: "LeaveApplication", id }],
     }),
 
-    createLeaveApplication: builder.mutation<LeaveApplication, CreateLeaveApplicationRequest>({
+    createLeaveApplication: builder.mutation<LeaveApplication, SectionAFields>({
       query: (body) => ({
         url: "leave-applications/",
         method: "POST",
@@ -113,10 +97,7 @@ export const leaveApi = baseApi.injectEndpoints({
     }),
 
     submitLeaveApplication: builder.mutation<LeaveApplication, { id: number }>({
-      query: ({ id }) => ({
-        url: `leave-applications/${id}/submit/`,
-        method: "POST",
-      }),
+      query: ({ id }) => ({ url: `leave-applications/${id}/submit/`, method: "POST" }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
@@ -124,12 +105,9 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    recommendLeaveApplication: builder.mutation<LeaveApplication, RecommendRequest>({
-      query: ({ id, ...body }) => ({
-        url: `leave-applications/${id}/recommend/`,
-        method: "POST",
-        body,
-      }),
+    // Section B1 — HOD/HOS/HOU. `decision: true` = recommended.
+    recommendLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/recommend/`, method: "POST", body }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
@@ -137,12 +115,8 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    returnLeaveApplication: builder.mutation<LeaveApplication, ReturnRequest>({
-      query: ({ id, ...body }) => ({
-        url: `leave-applications/${id}/return/`,
-        method: "POST",
-        body,
-      }),
+    returnLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/return/`, method: "POST", body }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
@@ -150,12 +124,9 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    verifyLeaveApplication: builder.mutation<LeaveApplication, VerifyRequest>({
-      query: ({ id, ...body }) => ({
-        url: `leave-applications/${id}/verify/`,
-        method: "POST",
-        body,
-      }),
+    // Section B2 — HR_ADMIN. `decision: true` = verified.
+    verifyLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/verify/`, method: "POST", body }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
@@ -163,12 +134,9 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    approveLeaveApplication: builder.mutation<LeaveApplication, ApproveDenyRequest>({
-      query: ({ id, ...body }) => ({
-        url: `leave-applications/${id}/approve/`,
-        method: "POST",
-        body,
-      }),
+    // Section C — AUTHORIZING_OFFICER.
+    approveLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/approve/`, method: "POST", body }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
@@ -176,12 +144,8 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    denyLeaveApplication: builder.mutation<LeaveApplication, ApproveDenyRequest>({
-      query: ({ id, ...body }) => ({
-        url: `leave-applications/${id}/deny/`,
-        method: "POST",
-        body,
-      }),
+    denyLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/deny/`, method: "POST", body }),
       invalidatesTags: (_result, _error, { id }) => [
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
@@ -189,12 +153,9 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
-    generateLeavePdf: builder.mutation<{ url: string }, { id: number }>({
-      query: ({ id }) => ({
-        url: `leave-applications/${id}/pdf/`,
-        method: "POST",
-      }),
-      invalidatesTags: (_result, _error, { id }) => [{ type: "Documents", id }],
+    generateLeavePdf: builder.mutation<LeaveDocument, { id: number }>({
+      query: ({ id }) => ({ url: `leave-applications/${id}/generate-pdf/`, method: "POST" }),
+      invalidatesTags: (_result, _error, { id }) => [{ type: "Documents", id }, { type: "LeaveApplication", id }],
     }),
 
     getLeaveDocuments: builder.query<LeaveDocument[], number>({
@@ -207,18 +168,14 @@ export const leaveApi = baseApi.injectEndpoints({
       providesTags: (_result, _error, id) => [{ type: "AuditTrail", id }],
     }),
 
-    getDashboardStats: builder.query<DashboardStats, void>({
-      query: () => "leave-applications/dashboard-stats/",
-      providesTags: ["Dashboard"],
-    }),
-
-    // Client-side preview only — replicates simple weekday math when the
-    // backend calculator is unavailable. Prefer this endpoint when reachable
-    // since it accounts for gazetted holidays.
-    previewWorkingDays: builder.query<{ workingDays: number }, { startDate: string; endDate: string; leaveTypeId?: number }>({
-      query: (params) => ({
-        url: "leave-applications/working-days-preview/",
-        params,
+    // Server-authoritative working-days calculation (excludes weekends +
+    // holidays). Used for a labeled "preview" before/at submit time; the
+    // definitive count is `total_working_days` on the saved application.
+    previewWorkingDays: builder.mutation<{ working_days: number }, { start_date: string; last_date: string }>({
+      query: ({ start_date, last_date }) => ({
+        url: "working-days-preview/",
+        method: "POST",
+        body: { start_date, end_date: last_date },
       }),
     }),
   }),
@@ -238,6 +195,5 @@ export const {
   useGenerateLeavePdfMutation,
   useGetLeaveDocumentsQuery,
   useGetLeaveAuditTrailQuery,
-  useGetDashboardStatsQuery,
-  useLazyPreviewWorkingDaysQuery,
+  usePreviewWorkingDaysMutation,
 } = leaveApi;

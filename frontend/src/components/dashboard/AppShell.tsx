@@ -16,12 +16,30 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
     { label: "My Applications", href: "/employee/applications" },
     { label: "New Leave Application", href: "/employee/leave/new" },
   ],
-  HOD: [{ label: "Applications", href: "/hod/applications" }],
-  HR: [{ label: "Applications", href: "/hr/applications" }],
-  AUTHORIZING_OFFICER: [{ label: "Applications", href: "/authorization/applications" }],
-  ADMIN: [
+  HEAD_OF_DEPARTMENT: [
+    { label: "Recommendations", href: "/hod/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  HEAD_OF_SECTION: [
+    { label: "Recommendations", href: "/hod/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  HEAD_OF_UNIT: [
+    { label: "Recommendations", href: "/hod/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  HR_ADMIN: [
+    { label: "Applications", href: "/hr/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  AUTHORIZING_OFFICER: [
+    { label: "Applications", href: "/authorization/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  SYSTEM_ADMIN: [
     { label: "Leave Types", href: "/admin/leave-types" },
     { label: "Holidays", href: "/admin/holidays" },
+    { label: "My Applications", href: "/employee/applications" },
   ],
 };
 
@@ -63,7 +81,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex flex-1 flex-col">
           <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
             <span className="text-sm text-gray-500">
-              {user ? `${user.fullName} · ${user.role.replaceAll("_", " ")}` : ""}
+              {user ? `${user.full_name} · ${user.role.replaceAll("_", " ")}` : ""}
             </span>
             <Button variant="secondary" onClick={handleLogout}>
               Log out

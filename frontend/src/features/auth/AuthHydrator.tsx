@@ -1,38 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useAppDispatch } from "@/store/hooks";
-import { setCredentials, setUser } from "@/store/slices/authSlice";
-import { loadTokens } from "@/lib/auth/tokenStorage";
+import { useEffect } from "react";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { setUser } from "@/store/slices/authSlice";
+import { selectAccessToken } from "@/store/slices/authSlice";
 import { useMeQuery } from "@/features/auth/authApi";
 
-// Rehydrates the Redux auth state from localStorage-persisted JWTs on first
-// client render, then fetches the current user profile. Renders nothing.
+// Fetches the current user profile once the store has been preloaded with a
+// persisted access token (see store/provider.tsx). Renders nothing.
 export function AuthHydrator() {
-  const dispatch = useAppDispatch();
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    const { accessToken, refreshToken } = loadTokens();
-    if (accessToken) {
-      dispatch(setCredentials({ accessToken, refreshToken, user: null }));
-    }
-    setHydrated(true);
-  }, [dispatch]);
-
-  return hydrated ? <MeSync /> : null;
-}
-
-function MeSync() {
-  const { data: user } = useMeQuery();
+  const accessToken = useAppSelector(selectAccessToken);
+  const { data: user } = useMeQuery(undefined, { skip: !accessToken });
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    if (user) {
-      dispatch(setUser(user));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+    if (user) dispatch(setUser(user));
+  }, [user, dispatch]);
 
   return null;
 }

@@ -1,17 +1,18 @@
 import { baseApi } from "@/lib/api/baseApi";
 import type { User } from "@/types";
 
-// TODO(api-confirm): endpoint paths + payload/response shapes to be confirmed
-// with BACKEND agent (djangorestframework-simplejwt style assumed).
+// Matches /API.md: POST /api/auth/login/, POST /api/auth/refresh/,
+// GET /api/users/me/. No logout endpoint is documented — logging out is a
+// client-only action (clear tokens + Redux state), handled in AppShell.
 interface LoginRequest {
-  email: string;
+  username: string;
   password: string;
 }
 
 interface LoginResponse {
   access: string;
   refresh: string;
-  user?: User;
+  user: User;
 }
 
 export const authApi = baseApi.injectEndpoints({
@@ -25,17 +26,10 @@ export const authApi = baseApi.injectEndpoints({
       invalidatesTags: ["Me"],
     }),
     me: builder.query<User, void>({
-      query: () => "auth/me/",
+      query: () => "users/me/",
       providesTags: ["Me"],
-    }),
-    logout: builder.mutation<void, { refresh: string } | void>({
-      query: (body) => ({
-        url: "auth/logout/",
-        method: "POST",
-        body: body ?? undefined,
-      }),
     }),
   }),
 });
 
-export const { useLoginMutation, useMeQuery, useLogoutMutation } = authApi;
+export const { useLoginMutation, useMeQuery } = authApi;

@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/ui/Badge";
-import type { LeaveApplicationListItem } from "@/types";
+import type { LeaveApplication } from "@/types";
 
 export function ApplicationsTable({
   items,
   detailBasePath,
 }: {
-  items: LeaveApplicationListItem[];
+  items: LeaveApplication[];
   detailBasePath: string;
 }) {
   if (items.length === 0) {
@@ -23,8 +23,6 @@ export function ApplicationsTable({
             <th className="py-2 pr-4 font-medium">Dates</th>
             <th className="py-2 pr-4 font-medium">Days</th>
             <th className="py-2 pr-4 font-medium">Status</th>
-            <th className="py-2 pr-4 font-medium">Stage</th>
-            <th className="py-2 pr-4 font-medium">Last Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
@@ -32,19 +30,17 @@ export function ApplicationsTable({
             <tr key={item.id} className="hover:bg-gray-50">
               <td className="py-2 pr-4">
                 <Link href={`${detailBasePath}/${item.id}`} className="text-blue-600 hover:underline">
-                  {item.applicantName}
+                  {item.full_name}
                 </Link>
               </td>
-              <td className="py-2 pr-4">{item.leaveTypeName}</td>
+              <td className="py-2 pr-4">{item.leave_type_name ?? item.leave_type}</td>
               <td className="py-2 pr-4">
-                {item.startDate} &ndash; {item.endDate}
+                {item.start_date} &ndash; {item.last_date}
               </td>
-              <td className="py-2 pr-4">{item.workingDays ?? "-"}</td>
+              <td className="py-2 pr-4">{item.total_working_days ?? item.working_days_preview ?? "-"}</td>
               <td className="py-2 pr-4">
                 <StatusBadge status={item.status} />
               </td>
-              <td className="py-2 pr-4">{item.stage}</td>
-              <td className="py-2 pr-4 text-gray-500">{item.lastAction ?? "-"}</td>
             </tr>
           ))}
         </tbody>

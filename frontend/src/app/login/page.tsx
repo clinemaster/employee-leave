@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppDispatch } from "@/store/hooks";
 import { setCredentials } from "@/store/slices/authSlice";
@@ -12,17 +12,25 @@ import { Input, Label } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const [login, { isLoading, error }] = useLoginMutation();
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     try {
-      const result = await login({ email, password }).unwrap();
+      const result = await login({ username, password }).unwrap();
       saveTokens(result.access, result.refresh);
       dispatch(
         setCredentials({
@@ -45,13 +53,13 @@ export default function LoginPage() {
         <p className="mb-6 text-sm text-gray-500">Sign in to continue</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="email"
-              type="email"
+              id="username"
+              type="text"
               autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>

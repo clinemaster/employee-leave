@@ -1,13 +1,15 @@
 import { baseApi } from "@/lib/api/baseApi";
 import type { Holiday, LeaveType } from "@/types";
 
-// Leave types + holidays admin CRUD. TODO(api-confirm): paths assumed as
-// /api/leave-types/ and /api/holidays/.
+// Leave types + holidays — read: any authenticated user, write: SYSTEM_ADMIN
+// only (enforced server-side). Matches /API.md field names exactly.
 export const catalogApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getLeaveTypes: builder.query<LeaveType[], void>({
+    getLeaveTypes: builder.query<LeaveType[] | { results: LeaveType[] }, void>({
       query: () => "leave-types/",
       providesTags: ["LeaveTypes"],
+      transformResponse: (response: LeaveType[] | { results: LeaveType[] }) =>
+        Array.isArray(response) ? response : response.results,
     }),
     createLeaveType: builder.mutation<LeaveType, Partial<LeaveType>>({
       query: (body) => ({ url: "leave-types/", method: "POST", body }),
@@ -18,17 +20,14 @@ export const catalogApi = baseApi.injectEndpoints({
       invalidatesTags: ["LeaveTypes"],
     }),
     deactivateLeaveType: builder.mutation<LeaveType, { id: number }>({
-      query: ({ id }) => ({ url: `leave-types/${id}/`, method: "PATCH", body: { isActive: false } }),
+      query: ({ id }) => ({ url: `leave-types/${id}/`, method: "PATCH", body: { is_active: false } }),
       invalidatesTags: ["LeaveTypes"],
     }),
-    reorderLeaveTypes: builder.mutation<LeaveType[], { order: number[] }>({
-      query: (body) => ({ url: "leave-types/reorder/", method: "POST", body }),
-      invalidatesTags: ["LeaveTypes"],
-    }),
-
-    getHolidays: builder.query<Holiday[], void>({
+    getHolidays: builder.query<Holiday[] | { results: Holiday[] }, void>({
       query: () => "holidays/",
       providesTags: ["Holidays"],
+      transformResponse: (response: Holiday[] | { results: Holiday[] }) =>
+        Array.isArray(response) ? response : response.results,
     }),
     createHoliday: builder.mutation<Holiday, Partial<Holiday>>({
       query: (body) => ({ url: "holidays/", method: "POST", body }),
@@ -50,7 +49,6 @@ export const {
   useCreateLeaveTypeMutation,
   useUpdateLeaveTypeMutation,
   useDeactivateLeaveTypeMutation,
-  useReorderLeaveTypesMutation,
   useGetHolidaysQuery,
   useCreateHolidayMutation,
   useUpdateHolidayMutation,
