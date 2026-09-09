@@ -2,6 +2,7 @@ from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.leave.permissions import IsSystemAdmin
@@ -11,8 +12,15 @@ from .serializers import NaotTokenObtainPairSerializer, UserSerializer, UserWrit
 
 
 class LoginView(TokenObtainPairView):
-    """POST /api/auth/login/ — obtain JWT access+refresh tokens (username/password)."""
+    """POST /api/auth/login/ — obtain JWT access+refresh tokens (username/password).
+
+    Throttled tightly (default 5/min per IP, see THROTTLE_RATE_LOGIN) as
+    brute-force / credential-stuffing protection — this is the one endpoint
+    every unauthenticated attacker can hit repeatedly.
+    """
     serializer_class = NaotTokenObtainPairSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
 
 class UserViewSet(viewsets.ModelViewSet):

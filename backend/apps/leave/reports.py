@@ -13,6 +13,7 @@ from django.http import HttpResponse
 from rest_framework.exceptions import ValidationError
 from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .models import LeaveApplication
@@ -116,6 +117,11 @@ class LeaveApplicationReportView(APIView):
     """
     permission_classes = [IsAuthenticated, IsReportingRole]
     content_negotiation_class = _IgnoreFormatSuffixNegotiation
+    # Resource-intensive (streams a full filtered export) — throttle
+    # separately from the general per-user rate (default 20/min, see
+    # THROTTLE_RATE_REPORT_EXPORT).
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'report_export'
 
     def get(self, request):
         export_format = (request.query_params.get('format') or 'csv').lower()

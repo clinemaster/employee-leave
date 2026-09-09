@@ -15,12 +15,25 @@ except ImportError:  # pragma: no cover - fallback if python-decouple isn't inst
         return val
 
 import dj_database_url
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('DJANGO_SECRET_KEY', default='django-insecure-dev-key-change-in-production')
+_DEV_SECRET_KEY = 'django-insecure-dev-key-change-in-production'
+SECRET_KEY = config('DJANGO_SECRET_KEY', default=_DEV_SECRET_KEY)
 
 DEBUG = config('DJANGO_DEBUG', default=True, cast=bool)
+
+# Never allow the system to run with the dev placeholder key once DEBUG is
+# off — this is the single most common "forgot to set env vars" production
+# footgun. Fail loudly at startup instead of silently shipping a known,
+# publicly-committed signing key.
+if not DEBUG and SECRET_KEY == _DEV_SECRET_KEY:
+    raise ImproperlyConfigured(
+        'DJANGO_SECRET_KEY is unset (or still the dev placeholder) while '
+        'DJANGO_DEBUG=False. Set a real, random DJANGO_SECRET_KEY env var '
+        'before running in production.'
+    )
 
 ALLOWED_HOSTS = config('DJANGO_ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
@@ -37,6 +50,7 @@ INSTALLED_APPS = [
     # Third-party
     'rest_framework',
     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
     'django_filters',
     'corsheaders',
 
@@ -99,7 +113,12 @@ AUTH_USER_MODEL = 'accounts.User'
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        # Stronger than Django's default of 8 — reasonable baseline for a
+        # government system holding personal/HR data.
+        'OPTIONS': {'min_length': config('PASSWORD_MIN_LENGTH', default=10, cast=int)},
+    },
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
@@ -131,17 +150,66 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 25,
     'EXCEPTION_HANDLER': 'apps.leave.exceptions.custom_exception_handler',
+    # Rate limiting (brute-force / resource-abuse protection). 'anon'/'user'
+    # are blanket defaults applied to every request; 'login', 'pdf_export'
+    # and 'report_export' are tighter per-endpoint scopes applied via
+    # ScopedRateThrottle on the specific views that need it (see
+    # apps/accounts/views.py LoginView, apps/leave/views.py generate_pdf,
+    # apps/leave/reports.py). All configurable via env so ops can tune
+    # without a code change.
+    'DEFAULT_THROTTLE_CLASSES': (
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.ScopedRateThrottle',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': config('THROTTLE_RATE_ANON', default='60/min'),
+        'user': config('THROTTLE_RATE_USER', default='300/min'),
+        'login': config('THROTTLE_RATE_LOGIN', default='5/min'),
+        'pdf_export': config('THROTTLE_RATE_PDF_EXPORT', default='10/min'),
+        'report_export': config('THROTTLE_RATE_REPORT_EXPORT', default='20/min'),
+        'document_upload': config('THROTTLE_RATE_DOCUMENT_UPLOAD', default='20/min'),
+    },
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=8),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=config('JWT_ACCESS_TOKEN_LIFETIME_HOURS', default=8, cast=int)),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=config('JWT_REFRESH_TOKEN_LIFETIME_DAYS', default=7, cast=int)),
     'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': False,
+    # Blacklist rotated-out refresh tokens (requires the token_blacklist app,
+    # now installed above) so a stolen refresh token can't keep being used
+    # after the legitimate client's next refresh cycle.
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
 }
+
+# --- File uploads (supporting documents) ------------------------------
+# Spec's FILE_SIZE_LIMIT env var (bytes). Enforced explicitly in
+# apps/documents (extension + magic-byte + size checks) since Django's
+# generic DATA_UPLOAD_MAX_MEMORY_SIZE alone doesn't validate content type.
+FILE_SIZE_LIMIT = config('FILE_SIZE_LIMIT', default=5 * 1024 * 1024, cast=int)  # 5 MB default
+DATA_UPLOAD_MAX_MEMORY_SIZE = FILE_SIZE_LIMIT + (1024 * 1024)
+FILE_UPLOAD_MAX_MEMORY_SIZE = FILE_SIZE_LIMIT + (1024 * 1024)
+
+# --- Security / production hardening headers ---------------------------
+# Off by default in DEBUG (local HTTP dev server); on by default once
+# DJANGO_DEBUG=False, still overridable via env for edge cases (e.g. a
+# staging box without TLS yet).
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=not DEBUG, cast=bool)
+SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=not DEBUG, cast=bool)
+CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=not DEBUG, cast=bool)
+SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=0 if DEBUG else 31536000, cast=int)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
+# Required when TLS is terminated at a reverse proxy (nginx) in front of
+# Gunicorn, per DEPLOYMENT.md §5, so Django correctly recognizes forwarded
+# HTTPS requests (otherwise SECURE_SSL_REDIRECT / secure cookies loop).
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # CORS - Next.js dev server
 CORS_ALLOWED_ORIGINS = config(
@@ -155,3 +223,9 @@ LEAVE_PDF_MEDIA_SUBDIR = 'leave_documents'
 
 # Static assets (emblem/logo placeholders) used by the PDF generator.
 DOCUMENTS_ASSETS_DIR = BASE_DIR / 'apps' / 'documents' / 'assets'
+
+# Fallback annual leave entitlement (days) used by the leave-policy engine
+# (apps/leave/entitlement.py) when no matching LeavePolicy rule exists for
+# an employee/leave_type. Configurable via env for deployments that want a
+# different system-wide default.
+LEAVE_DEFAULT_ENTITLEMENT_DAYS = config('LEAVE_DEFAULT_ENTITLEMENT_DAYS', default=28, cast=int)

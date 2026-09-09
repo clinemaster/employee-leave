@@ -15,12 +15,29 @@ aren't mistaken for implemented, configurable behavior.
 
 | Variable | Default (dev) | Notes |
 |---|---|---|
-| `DJANGO_SECRET_KEY` | `django-insecure-dev-key-change-in-production` | **Must** be overridden in production with a long random value. Never commit the real value. |
-| `DJANGO_DEBUG` | `True` | Set to `False` in production. Controls Django's debug pages / stack traces. |
+| `DJANGO_SECRET_KEY` | `django-insecure-dev-key-change-in-production` | **Must** be overridden in production with a long random value. Never commit the real value. Startup now **raises `ImproperlyConfigured` and refuses to run** if `DJANGO_DEBUG=False` and this is still the dev placeholder — you cannot accidentally deploy with the default key. |
+| `DJANGO_DEBUG` | `True` | Set to `False` in production. Controls Django's debug pages / stack traces, and gates the security-header defaults below. |
 | `DJANGO_ALLOWED_HOSTS` | `localhost,127.0.0.1` | Comma-separated. Set to your real domain(s), e.g. `leave.naot.go.tz`. |
 | `DATABASE_URL` | `postgres://naot_leave:naot_leave@localhost:5432/naot_leave` | Parsed via `dj_database_url`. Use `postgres://user:pass@host:5432/dbname` in production, or `sqlite:///db.sqlite3` for local/dev only. |
 | `DJANGO_TIME_ZONE` | `Africa/Dar_es_Salaam` | Django `TIME_ZONE` setting. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated list of origins allowed to call the API (the Next.js frontend's origin(s) in production). |
+| `PASSWORD_MIN_LENGTH` | `10` | Minimum password length enforced by `AUTH_PASSWORD_VALIDATORS`. |
+| `JWT_ACCESS_TOKEN_LIFETIME_HOURS` | `8` | JWT access token lifetime. |
+| `JWT_REFRESH_TOKEN_LIFETIME_DAYS` | `7` | JWT refresh token lifetime. Rotated refresh tokens are now blacklisted (`BLACKLIST_AFTER_ROTATION=True`) — run migrations after upgrading to pick up the `token_blacklist` app's tables. |
+| `THROTTLE_RATE_ANON` / `THROTTLE_RATE_USER` | `60/min` / `300/min` | Blanket DRF rate limits for anonymous/authenticated requests. |
+| `THROTTLE_RATE_LOGIN` | `5/min` | Login-endpoint throttle (brute-force protection). |
+| `THROTTLE_RATE_PDF_EXPORT` | `10/min` | `.../generate-pdf/` throttle. |
+| `THROTTLE_RATE_REPORT_EXPORT` | `20/min` | `/api/reports/leave-applications/` throttle. |
+| `THROTTLE_RATE_DOCUMENT_UPLOAD` | `20/min` | `.../upload-document/` throttle. |
+| `FILE_SIZE_LIMIT` | `5242880` (5 MB) | Max upload size in bytes, now actually enforced (`apps/documents/uploads.py`) for the supporting-document upload endpoint, and feeds `DATA_UPLOAD_MAX_MEMORY_SIZE`/`FILE_UPLOAD_MAX_MEMORY_SIZE`. This is the previously-unimplemented spec variable — it now works. |
+| `SECURE_SSL_REDIRECT` / `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | `not DJANGO_DEBUG` | HTTPS/cookie hardening, on automatically once `DJANGO_DEBUG=False`; override only for an intermediate staging box without TLS yet. |
+| `SECURE_HSTS_SECONDS` | `0` in DEBUG, `31536000` (1yr) otherwise | HSTS header duration once behind real TLS. |
+
+Rate-limit counters use Django's default cache backend (in-memory
+`LocMemCache` unless you configure `CACHES`) — for more than one app
+process/host, point `CACHES` at a shared backend (Redis/Memcached) or the
+limits won't be shared across workers. Not yet configured — see
+SECURITY.md's "Known gaps".
 
 ### Frontend (`frontend/src/lib/api/baseApi.ts`)
 
