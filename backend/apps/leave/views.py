@@ -53,6 +53,49 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
             return qs
         return qs.filter(employee=user)
 
+    @action(detail=False, methods=['post'])
+    def recalculate(self, request):
+        """
+        POST /api/leave-balances/recalculate/
+        Body: `{employee?, leave_type?, period?}`. Recomputes taken/pending/
+        remaining from LeaveApplication history (spec section 40).
+        - An employee may only recalculate their own balances (employee is
+          forced to self, other fields optional).
+        - HR_ADMIN / AUTHORIZING_OFFICER / SYSTEM_ADMIN may target any
+          employee (or omit `employee` to recalculate every combo they
+          currently have a LeaveBalance row for).
+        """
+        from .balances import recalculate_all_for_employee, recalculate_balance
+        from .permissions import is_authorizing_officer, is_hr_admin, is_system_admin
+
+        user = request.user
+        privileged = is_hr_admin(user) or is_authorizing_officer(user) or is_system_admin(user)
+        employee_id = request.data.get('employee')
+        leave_type_id = request.data.get('leave_type')
+        period = request.data.get('period')
+
+        if not privileged:
+            employee_id = user.id
+
+        if employee_id and leave_type_id and period:
+            balance = recalculate_balance(employee_id, leave_type_id, period)
+            return Response(LeaveBalanceSerializer(balance).data)
+
+        from apps.accounts.models import User
+        if employee_id:
+            targets = [employee_id]
+        elif privileged:
+            targets = LeaveBalance.objects.values_list('employee_id', flat=True).distinct()
+        else:
+            targets = [user.id]
+
+        results = []
+        for emp_id in targets:
+            employee = User.objects.filter(pk=emp_id).first()
+            if employee:
+                results.extend(recalculate_all_for_employee(employee))
+        return Response(LeaveBalanceSerializer(results, many=True).data)
+
 
 class WorkingDaysPreviewView(APIView):
     """POST /api/leave/working-days-preview/ {start_date, end_date} -> {working_days}.
@@ -202,6 +245,21 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     def deny(self, request, pk=None):
         from .models import LeaveApproval
         return self._do_transition(request, pk, 'deny', 'approval', LeaveApproval)
+
+    @action(detail=True, methods=['post'], url_path='resubmit-to-hr')
+    def resubmit_to_hr(self, request, pk=None):
+        """HOD resubmits (after correcting Section B1) from RETURNED_TO_HOD -> PENDING_HR_REVIEW."""
+        return self._do_transition(request, pk, 'resubmit_to_hr')
+
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        """PDF_GENERATED -> COMPLETED (terminal, successful)."""
+        return self._do_transition(request, pk, 'complete')
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        """DENIED or COMPLETED -> ARCHIVED (terminal, housekeeping)."""
+        return self._do_transition(request, pk, 'archive')
 
     @action(detail=True, methods=['post'], url_path='generate-pdf')
     def generate_pdf(self, request, pk=None):

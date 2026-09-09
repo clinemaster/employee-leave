@@ -92,8 +92,20 @@ def _check_role_for_action(user, application, action):
     elif action in ('generate_pdf',):
         if not (is_hr_admin(user) or is_authorizing_officer(user) or application.employee_id == user.id):
             raise PermissionDenied('You are not authorized to generate this document.')
-    # route_to_hr / resubmit_to_hr / complete / archive are system-triggered
-    # follow-ons invoked internally right after the human action above.
+    elif action == 'resubmit_to_hr':
+        if not is_hod(user):
+            raise PermissionDenied('Only the routed Head of Department/Section/Unit may act here.')
+        hod = routed_hod_for(application)
+        if hod is None or hod.id != user.id:
+            raise PermissionDenied('This application is not routed to you.')
+    elif action == 'complete':
+        if not (is_hr_admin(user) or is_authorizing_officer(user)):
+            raise PermissionDenied('Only HR Admin or the Authorizing Officer may mark this complete.')
+    elif action == 'archive':
+        if not is_hr_admin(user):
+            raise PermissionDenied('Only HR Admin may archive an application.')
+    # route_to_hr / complete-follow-on are system-triggered follow-ons invoked
+    # internally right after the human action above.
 
 
 def _notify(user_id, message, application):
@@ -145,14 +157,21 @@ def perform_transition(application, user, action, comments='', request=None):
 
     _send_transition_notifications(application, action, user)
 
+    # Keep the employee's leave-balance ledger (spec section 40) live-accurate:
+    # every status change moves working days between "pending" and "taken",
+    # or removes them entirely (return/deny), so recompute from history.
+    from .balances import recalculate_for_application
+    recalculate_for_application(application)
+
     # System-triggered auto-follow-on transitions (routing hops with no human
     # decision attached) happen immediately, inside the same transaction.
     if action == 'recommend':
         application = perform_transition(application, user, 'route_to_hr', comments='auto-route to HR')
     elif action == 'verify':
         application = perform_transition(application, user, 'route_to_authorization', comments='auto-route to Authorizing Officer')
-    elif action == 'return_to_hod' and False:
-        pass  # resubmit_to_hr is explicitly triggered by the HOD, not automatic
+    # resubmit_to_hr / complete / archive are explicitly triggered by a human
+    # action (HOD resubmit, HR/AO housekeeping) via their own endpoints, not
+    # automatic follow-ons.
 
     return application
 
@@ -180,7 +199,9 @@ def _send_transition_notifications(application, action, actor):
         'return_to_hod': [
             (hod_id, f'Leave application {application.application_number} was returned to you by HR for clarification.'),
         ],
-        'resubmit_to_hr': [],
+        'resubmit_to_hr': [
+            (employee_id, f'Your leave application {application.application_number} was resubmitted to HR by your Head of Department.'),
+        ],
         'route_to_authorization': [],
         'approve': [
             (employee_id, f'Your leave application {application.application_number} was approved.'),
@@ -191,7 +212,9 @@ def _send_transition_notifications(application, action, actor):
         'generate_pdf': [
             (employee_id, f'The PDF for leave application {application.application_number} has been generated.'),
         ],
-        'complete': [],
+        'complete': [
+            (employee_id, f'Your leave application {application.application_number} has been completed.'),
+        ],
         'archive': [],
     }
     for user_id, message in messages.get(action, []):

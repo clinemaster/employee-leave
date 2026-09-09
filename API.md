@@ -55,10 +55,33 @@ Server-authoritative: excludes Saturdays/Sundays and `Holiday` dates
 exact same calculation used when an application is created/updated
 (`total_working_days` on the application).
 
-## Leave Balances (read-only via API)
+## Leave Balances
 
 `GET /api/leave-balances/` — employees see only their own; HR_ADMIN,
 AUTHORIZING_OFFICER, SYSTEM_ADMIN see all. Filter: `?employee=&leave_type=&period=`.
+
+Balances are real, computed values (spec section 40), not hand-maintained
+numbers: `taken` = sum of `total_working_days` across this employee's
+applications whose Section C decision (`approval.approved`) is `True`;
+`pending` = sum of `total_working_days` across applications currently
+in-flight (`PENDING_HOD_REVIEW` through `PENDING_AUTHORIZATION`, plus
+`HOD_RECOMMENDED`/`RETURNED_TO_HOD`); `remaining = opening_balance +
+entitlement - taken - pending`. `opening_balance`/`entitlement` are still
+set by HR/admin (there's no "annual entitlement" source of truth to derive
+them from). Recomputed automatically after every workflow transition on the
+touched employee/leave_type/period (`apps/leave/workflow.py` calls
+`apps/leave/balances.py:recalculate_for_application`), so reads are always
+current — no cron/background job needed.
+
+### POST /api/leave-balances/recalculate/
+Body: `{employee?, leave_type?, period?}` (all optional). Force-recomputes
+from `LeaveApplication` history.
+- Employees may only recalculate their own (server ignores a client-supplied
+  `employee` for non-privileged callers).
+- HR_ADMIN / AUTHORIZING_OFFICER / SYSTEM_ADMIN may target any employee, or
+  omit `employee` to recompute every balance row that currently exists.
+- If `employee`+`leave_type`+`period` are all given, returns the single
+  updated `LeaveBalanceSerializer` object; otherwise returns a list.
 
 ## Leave Applications
 
@@ -113,6 +136,9 @@ Sending a field outside your authorized section returns
 | `.../approve/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=true), -> APPROVED |
 | `.../deny/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=false), -> DENIED |
 | `.../generate-pdf/` | APPROVED | applicant, HR_ADMIN, AUTHORIZING_OFFICER | renders 2-page PDF, stores `LeaveDocument`, -> PDF_GENERATED |
+| `.../resubmit-to-hr/` | RETURNED_TO_HOD | routed HOD/HOS/HOU | HOD resubmits after correcting Section B1, -> PENDING_HR_REVIEW |
+| `.../complete/` | PDF_GENERATED | HR_ADMIN, AUTHORIZING_OFFICER | -> COMPLETED (terminal, successful) |
+| `.../archive/` | DENIED, COMPLETED | HR_ADMIN | -> ARCHIVED (terminal, housekeeping) |
 
 `decision` in the body is a boolean used by `/recommend/` (recommended?)
 and `/verify/` (verified?); `/approve/` and `/deny/` set it automatically.
@@ -141,6 +167,55 @@ previous_status, new_status, timestamp, comments}, ...]`, newest first.
 
 `Notification` fields: `id, message, is_read, related_application, created_at`.
 
+## Dashboard stats
+
+### GET /api/dashboard-stats/
+Role-scoped counts (same row-level visibility rules as the leave-applications
+list — an HOD only ever sees counts for applications routed to them, etc.).
+Shape depends on the caller's role:
+
+- **EMPLOYEE**: `{draft, pending, approved, denied, returned}` — own
+  applications only. `pending` bundles every in-flight status
+  (`PENDING_HOD_REVIEW` … `PENDING_AUTHORIZATION`); `approved` bundles
+  `APPROVED`/`PDF_GENERATED`/`COMPLETED`.
+- **HOD/HOS/HOU**: `{pending_recommendation, recommended, returned,
+  completed}` — applications routed to this HOD (`employee__manager=you`).
+- **HR_ADMIN**: `{pending_verification, verified, returned, approved,
+  denied}` — org-wide.
+- **AUTHORIZING_OFFICER**: `{pending_authorization, approved, denied,
+  returned}` — org-wide.
+- **SYSTEM_ADMIN**: `{draft, in_progress, approved, denied, archived,
+  total_applications, applications_by_leave_type: [{leave_type, count}],
+  applications_by_department: [{department, count}],
+  applications_by_station: [{station, count}],
+  average_processing_time_hours}` — org-wide aggregates.
+  `average_processing_time_hours` is the mean `updated_at - submitted_at`
+  (hours) across applications that reached a terminal status
+  (APPROVED/DENIED/PDF_GENERATED/COMPLETED/ARCHIVED); `null` if none have.
+
+Implementation: `apps/leave/dashboard.py` — plain `.count()`/`.aggregate()`
+queries per status bucket (no N+1; a handful of aggregate queries per call).
+
+## Reports / exports
+
+### GET /api/reports/leave-applications/?format=csv|xlsx&...filters
+HR_ADMIN, AUTHORIZING_OFFICER, SYSTEM_ADMIN only (403 for everyone else).
+Streams a CSV or Excel (`.xlsx`, via `openpyxl`) export of leave applications
+(one row per application: application number, employee, check number,
+department, section, unit, station, leave type, status, start/last date,
+working days, submitted/created/updated timestamps).
+
+Query filters (all optional, combinable): `start_date` (`start_date>=`),
+`end_date` (`last_date<=`), `department`, `station`, `leave_type`, `status`,
+`employee` (all four as id). `format` defaults to `csv`.
+
+Note: `format` here is our own filter, not DRF's URL-format-suffix
+convention — the view pins `content_negotiation_class` to ignore the
+built-in renderer-suffix lookup so the two don't collide.
+
+PDF export of a report is deferred (see "Deferred" below) — CSV/XLSX cover
+the spec's minimum bar.
+
 ## Status enum (`LeaveApplication.status`)
 
 `DRAFT, SUBMITTED, PENDING_HOD_REVIEW, HOD_RECOMMENDED,
@@ -149,10 +224,7 @@ PENDING_AUTHORIZATION, APPROVED, DENIED, PDF_GENERATED, COMPLETED, ARCHIVED`
 
 Note: `SUBMITTED` is transient — `/submit/` moves straight to
 `PENDING_HOD_REVIEW` in the same transaction (the "SUBMITTED" audit
-action is still logged separately for traceability). `RETURNED_TO_HOD`
-and `COMPLETED`/`ARCHIVED` transitions exist in the state machine
-(`apps/leave/workflow.py`) but do not yet have dedicated REST actions
-wired up in phase 1 — see "Deferred" below.
+action is still logged separately for traceability).
 
 ## Deferred to a later phase (do not assume these exist)
 
@@ -163,9 +235,11 @@ wired up in phase 1 — see "Deferred" below.
   images at `backend/apps/documents/assets/*.png`.
 - Digital signatures / DSMS / cryptographic signing — explicitly out of
   scope; PDF signature areas are blank lines only.
-- Dedicated REST actions for `RETURNED_TO_HOD -> PENDING_HR_REVIEW`
-  (HOD resubmit-to-HR) and `PDF_GENERATED -> COMPLETED -> ARCHIVED` —
-  the state machine supports these transitions but they aren't yet
-  exposed as endpoints.
-- Full reporting/export endpoints, bulk operations, extensive automated
-  test suite.
+- PDF export of the leave-applications report (`/api/reports/...`) — only
+  CSV and XLSX are implemented.
+- Bulk operations (e.g. bulk-approve, bulk-archive) beyond the single-row
+  workflow actions.
+- `opening_balance`/`entitlement` on `LeaveBalance` are still set manually
+  by HR/admin — there's no policy engine to derive annual entitlement by
+  role/grade/service length. `taken`/`pending`/`remaining` are real,
+  computed values (see "Leave Balances" above).
