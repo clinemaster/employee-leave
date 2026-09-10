@@ -4,10 +4,12 @@ This document covers production deployment of the Django backend (`backend/`)
 and the Next.js frontend (`frontend/`). It reflects the environment variables
 and configuration **actually wired up in code** as of this writing (verified
 by grepping `backend/naot_leave/settings.py` and `frontend/src`), not the
-full variable list from the original spec — several spec-listed variables
-(email, document storage, file size limits, application URL) are **not yet
-read by any code path**. Those gaps are called out explicitly below so they
-aren't mistaken for implemented, configurable behavior.
+full variable list from the original spec — a few spec-listed variables
+(document storage, application URL) are **not yet read by any code path**.
+Those gaps are called out explicitly below so they aren't mistaken for
+implemented, configurable behavior. Email (spec section 47's `EMAIL_HOST`/
+`EMAIL_PORT`/`EMAIL_USERNAME`/`EMAIL_PASSWORD`) **is now implemented** — see
+the email row below and the dedicated subsection after the table.
 
 ## 1. Environment variables
 
@@ -32,6 +34,12 @@ aren't mistaken for implemented, configurable behavior.
 | `FILE_SIZE_LIMIT` | `5242880` (5 MB) | Max upload size in bytes, now actually enforced (`apps/documents/uploads.py`) for the supporting-document upload endpoint, and feeds `DATA_UPLOAD_MAX_MEMORY_SIZE`/`FILE_UPLOAD_MAX_MEMORY_SIZE`. This is the previously-unimplemented spec variable — it now works. |
 | `SECURE_SSL_REDIRECT` / `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | `not DJANGO_DEBUG` | HTTPS/cookie hardening, on automatically once `DJANGO_DEBUG=False`; override only for an intermediate staging box without TLS yet. |
 | `SECURE_HSTS_SECONDS` | `0` in DEBUG, `31536000` (1yr) otherwise | HSTS header duration once behind real TLS. |
+| `EMAIL_HOST` | `` (empty) | SMTP host. When unset/empty, Django's **console** email backend is used instead (emails are printed to stdout) — this is what local dev, CI, and `pytest` run with by default, so no live mail server is required. Set to a real SMTP host (e.g. your mail relay) to switch to real delivery via `django.core.mail.backends.smtp.EmailBackend`. |
+| `EMAIL_PORT` | `587` | SMTP port. |
+| `EMAIL_USERNAME` | `` (empty) | SMTP auth username (`EMAIL_HOST_USER`). |
+| `EMAIL_PASSWORD` | `` (empty) | SMTP auth password (`EMAIL_HOST_PASSWORD`). Never commit the real value. |
+| `EMAIL_USE_TLS` | `True` | Whether to use STARTTLS when talking to `EMAIL_HOST`. |
+| `DEFAULT_FROM_EMAIL` | `no-reply@naot.go.tz` | `From:` address on outgoing workflow notification emails. |
 
 Rate-limit counters use Django's default cache backend (in-memory
 `LocMemCache` unless you configure `CACHES`) — for more than one app
@@ -45,22 +53,57 @@ SECURITY.md's "Known gaps".
 |---|---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | Base URL the frontend calls for the Django API. Must be set to the public API URL in production (e.g. `https://api.leave.naot.go.tz`). Note: the code uses `NEXT_PUBLIC_API_BASE_URL`, not `NEXT_PUBLIC_API_URL`/`API_URL` as named in the original spec — use this exact name. |
 
+### Email notifications (spec section 29 routing)
+
+Real SMTP email is now sent alongside every in-app `Notification` row, for
+the same events, per spec section 29's routing table: employee submits ->
+email to HOD; HOD recommends -> email to all active HR_ADMIN users; HR
+verifies -> email to all active AUTHORIZING_OFFICER users; AO
+approves/denies -> email to the employee; application marked complete ->
+email to the employee and all active HR_ADMIN users. Recipients are looked
+up via `accounts.User.official_email` (a user with no `official_email` set
+is silently skipped — no error).
+
+Implementation notes (`backend/apps/notifications/emails.py`,
+`backend/apps/leave/workflow.py`):
+- Configured via the `EMAIL_*`/`DEFAULT_FROM_EMAIL` env vars in the table
+  above. With `EMAIL_HOST` unset (the local/CI default), Django's console
+  backend prints emails to stdout instead of requiring a live SMTP server.
+- Sends are queued with `transaction.on_commit()` from inside
+  `apps.leave.workflow.perform_transition` (which runs in
+  `transaction.atomic()`), so a slow SMTP round-trip never holds up the DB
+  transaction, and nothing is emailed about a transition that doesn't
+  actually commit.
+- Each send is wrapped in its own `try`/`except` and logged via Django's
+  standard `logging` (see the `LOGGING` dict in `settings.py`) on failure —
+  an SMTP error (misconfigured server, network issue, etc.) is swallowed and
+  logged, never raised back into the request/transition. The workflow
+  transition, its `AuditLog` row, and its in-app `Notification` row(s) always
+  succeed independently of whether the email actually sent.
+- Templates are plain-text strings per transition type (`_TEMPLATES` in
+  `emails.py`) rather than a `templates/` directory — the content is short
+  and uniform enough that separate `.txt`/`.html` files would add
+  indirection without benefit at this scope. Subjects always include the
+  application number (`NAOT-LV-<year>-NNNNNN`).
+- Tested in `backend/apps/leave/tests/test_workflow_emails.py` using
+  Django's `django.core.mail.outbox` test backend (via the `mailoutbox`
+  fixture) plus `django_capture_on_commit_callbacks` to execute the queued
+  `on_commit` sends synchronously inside each test; a dedicated test mocks
+  `send_mail` to raise and asserts the workflow transition, audit log, and
+  notification still succeed regardless.
+
 ### Variables named in the spec but NOT currently implemented in code
 
-The original spec (section 47) lists `EMAIL_HOST`/`EMAIL_PORT`/`EMAIL_USERNAME`/
-`EMAIL_PASSWORD`, `STORAGE` config, `DOCUMENT_STORAGE` config, `FILE_SIZE_LIMIT`,
-and `APPLICATION_URL`. As of this writing, none of these are read anywhere in
-`backend/` or `frontend/` — there is no `django.core.mail` configuration, no
-custom storage backend, no upload size limit enforcement, and no
-"application base URL" setting used for links in emails/PDFs. Do **not**
+The original spec (section 47) also lists `STORAGE` config, `DOCUMENT_STORAGE`
+config, and `APPLICATION_URL`. As of this writing, none of these are read
+anywhere in `backend/` or `frontend/` — there is no custom storage backend
+and no "application base URL" setting used for links in emails/PDFs (the
+notification emails above are self-contained text, not links). Do **not**
 assume they work by setting them; they will be silently ignored. If/when
-email notifications, cloud object storage, or upload limits are implemented,
-add the corresponding `EMAIL_*`, `DEFAULT_FILE_STORAGE`/`STORAGES`,
-`FILE_UPLOAD_MAX_MEMORY_SIZE`/`DATA_UPLOAD_MAX_MEMORY_SIZE`, and
-`APPLICATION_URL` settings then, and update this table. Today, notifications
-are in-app only (`apps.notifications.Notification` rows), file storage is
-Django's default local filesystem storage under `MEDIA_ROOT`, and there is no
-enforced upload size cap beyond Django's built-in defaults.
+cloud object storage or an application base URL are implemented, add the
+corresponding `DEFAULT_FILE_STORAGE`/`STORAGES` and `APPLICATION_URL`
+settings then, and update this table. Today, file storage is Django's
+default local filesystem storage under `MEDIA_ROOT`.
 
 ### Suggested `.env` files
 
@@ -72,6 +115,12 @@ DJANGO_ALLOWED_HOSTS=leave.naot.go.tz
 DATABASE_URL=postgres://naot_leave:REDACTED@db-host:5432/naot_leave
 DJANGO_TIME_ZONE=Africa/Dar_es_Salaam
 CORS_ALLOWED_ORIGINS=https://leave.naot.go.tz
+EMAIL_HOST=smtp.naot.go.tz
+EMAIL_PORT=587
+EMAIL_USERNAME=leave-notifications@naot.go.tz
+EMAIL_PASSWORD=REDACTED
+EMAIL_USE_TLS=True
+DEFAULT_FROM_EMAIL=leave-notifications@naot.go.tz
 ```
 
 `frontend/.env.production` (or set in the hosting platform):

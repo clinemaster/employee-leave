@@ -229,3 +229,38 @@ DOCUMENTS_ASSETS_DIR = BASE_DIR / 'apps' / 'documents' / 'assets'
 # an employee/leave_type. Configurable via env for deployments that want a
 # different system-wide default.
 LEAVE_DEFAULT_ENTITLEMENT_DAYS = config('LEAVE_DEFAULT_ENTITLEMENT_DAYS', default=28, cast=int)
+
+# --- Email (spec section 47 / section 29 notification routing) ---------
+# Real SMTP, configured via env. When EMAIL_HOST is unset/empty (local dev,
+# CI, the test suite) we fall back to Django's console backend, which prints
+# outgoing emails to stdout instead of requiring a live mail server — this
+# keeps `pytest` and local dev working with zero configuration. Django's
+# locmem backend is used automatically under pytest via django.core.mail's
+# test override (django.test.utils.setup_test_environment), so this default
+# only matters for `runserver`/manual use, not for the test suite itself.
+EMAIL_HOST = config('EMAIL_HOST', default='')
+if EMAIL_HOST:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+EMAIL_PORT = config('EMAIL_PORT', default=587, cast=int)
+EMAIL_HOST_USER = config('EMAIL_USERNAME', default='')
+EMAIL_HOST_PASSWORD = config('EMAIL_PASSWORD', default='')
+EMAIL_USE_TLS = config('EMAIL_USE_TLS', default=True, cast=bool)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='no-reply@naot.go.tz')
+
+# --- Logging -------------------------------------------------------------
+# Minimal stdout logging so email-send failures (see apps/notifications/emails.py)
+# are visible without crashing the request/workflow transition that triggered
+# them.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+}

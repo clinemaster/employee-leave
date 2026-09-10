@@ -13,11 +13,13 @@ def api_client():
 
 
 def _make_user(db, **kwargs):
+    username = kwargs.pop('username')
     defaults = dict(
-        username=kwargs.pop('username'),
+        username=username,
         full_name=kwargs.pop('full_name', 'Test User'),
         check_number=kwargs.pop('check_number'),
         role=kwargs.pop('role', Role.EMPLOYEE),
+        official_email=kwargs.pop('official_email', f'{username}@naot.go.tz'),
     )
     defaults.update(kwargs)
     user = User.objects.create_user(password='TestPass123!', **defaults)

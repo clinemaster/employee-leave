@@ -40,7 +40,9 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
+from apps.accounts.models import Role, User
 from apps.audit.models import AuditLog
+from apps.notifications.emails import send_workflow_email
 from apps.notifications.models import Notification
 
 from .models import ApplicationStatus as S
@@ -176,8 +178,17 @@ def perform_transition(application, user, action, comments='', request=None):
     return application
 
 
+def _hr_admins():
+    return User.objects.filter(role=Role.HR_ADMIN, is_active=True)
+
+
+def _authorizing_officers():
+    return User.objects.filter(role=Role.AUTHORIZING_OFFICER, is_active=True)
+
+
 def _send_transition_notifications(application, action, actor):
     employee_id = application.employee_id
+    employee = application.employee
     hod = routed_hod_for(application)
     hod_id = hod.id if hod else None
 
@@ -219,3 +230,50 @@ def _send_transition_notifications(application, action, actor):
     }
     for user_id, message in messages.get(action, []):
         _notify(user_id, message, application)
+
+    _send_transition_emails(application, action, employee, hod)
+
+
+def _send_transition_emails(application, action, employee, hod):
+    """
+    Real email delivery, per spec section 29's routing: employee submits ->
+    notify HOD; HOD recommends -> notify HR; HR verifies -> notify AO; AO
+    approves -> notify Employee; application completed -> notify
+    Employee+HR. Queued via transaction.on_commit so a slow/broken SMTP
+    server never blocks or breaks the workflow transition itself (see
+    apps/notifications/emails.py).
+    """
+    ctx = {
+        'application_number': application.application_number,
+        'employee_name': getattr(employee, 'full_name', None) or employee.username,
+    }
+
+    if action == 'submit':
+        send_workflow_email('submit_employee', employee, ctx)
+        send_workflow_email('submit_hod', hod, ctx)
+    elif action == 'recommend':
+        send_workflow_email('recommend', employee, ctx)
+    elif action == 'return_to_employee':
+        send_workflow_email('return_to_employee', employee, ctx)
+    elif action == 'route_to_hr':
+        # HOD recommended -> notify HR (all active HR_ADMIN users).
+        for hr_user in _hr_admins():
+            send_workflow_email('route_to_hr_hr', hr_user, ctx)
+    elif action == 'verify':
+        send_workflow_email('verify', employee, ctx)
+    elif action == 'return_to_hod':
+        send_workflow_email('return_to_hod', hod, ctx)
+    elif action == 'resubmit_to_hr':
+        send_workflow_email('resubmit_to_hr', employee, ctx)
+    elif action == 'route_to_authorization':
+        # HR verified -> notify AO (all active AUTHORIZING_OFFICER users).
+        for ao_user in _authorizing_officers():
+            send_workflow_email('route_to_authorization_ao', ao_user, ctx)
+    elif action == 'approve':
+        send_workflow_email('approve', employee, ctx)
+    elif action == 'deny':
+        send_workflow_email('deny', employee, ctx)
+    elif action == 'complete':
+        send_workflow_email('complete_employee', employee, ctx)
+        for hr_user in _hr_admins():
+            send_workflow_email('complete_hr', hr_user, ctx)
