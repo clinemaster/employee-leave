@@ -373,9 +373,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         if not upload:
             return Response({'detail': 'No file provided (expected multipart field "file").'}, status=status.HTTP_400_BAD_REQUEST)
 
-        from apps.documents.uploads import UploadValidationError, validate_upload
+        from apps.documents.uploads import UploadValidationError, scan_for_malware, validate_upload
         try:
             validate_upload(upload)
+            scan_for_malware(upload)
         except UploadValidationError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

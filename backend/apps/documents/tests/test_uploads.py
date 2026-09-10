@@ -3,12 +3,13 @@ Supporting-document upload security: extension/magic-byte/size validation,
 and the authenticated-only download endpoint (no direct file URL access).
 """
 import io
+from unittest.mock import patch
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework import status
 
-from apps.documents.uploads import UploadValidationError, validate_upload
+from apps.documents.uploads import UploadValidationError, scan_for_malware, validate_upload
 
 pytestmark = pytest.mark.django_db
 
@@ -112,6 +113,68 @@ def test_download_rejects_unrelated_user(as_user, other_employee_user, draft_app
     client = as_user(other_employee_user)
     resp = client.get(f'/api/leave-applications/{draft_application.id}/documents/{doc.id}/download/')
     assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+
+def test_scan_for_malware_skipped_when_disabled(settings):
+    """CLAMAV_ENABLED=False (the default) must never attempt a connection."""
+    settings.CLAMAV_ENABLED = False
+    f = SimpleUploadedFile('photo.png', PNG_HEADER, content_type='image/png')
+    with patch('clamd.ClamdNetworkSocket') as mock_clamd:
+        scan_for_malware(f)  # should not raise
+    mock_clamd.assert_not_called()
+
+
+def test_scan_for_malware_clean_result_passes(settings):
+    settings.CLAMAV_ENABLED = True
+    f = SimpleUploadedFile('photo.png', PNG_HEADER, content_type='image/png')
+    with patch('clamd.ClamdNetworkSocket') as mock_clamd:
+        mock_clamd.return_value.instream.return_value = {'stream': ('OK', None)}
+        scan_for_malware(f)  # should not raise
+
+
+def test_scan_for_malware_infected_result_rejects(settings):
+    settings.CLAMAV_ENABLED = True
+    f = SimpleUploadedFile('photo.png', PNG_HEADER, content_type='image/png')
+    with patch('clamd.ClamdNetworkSocket') as mock_clamd:
+        mock_clamd.return_value.instream.return_value = {'stream': ('FOUND', 'Eicar-Test-Signature')}
+        with pytest.raises(UploadValidationError):
+            scan_for_malware(f)
+
+
+def test_scan_for_malware_connection_error_fails_closed(settings):
+    settings.CLAMAV_ENABLED = True
+    f = SimpleUploadedFile('photo.png', PNG_HEADER, content_type='image/png')
+    with patch('clamd.ClamdNetworkSocket') as mock_clamd:
+        mock_clamd.return_value.instream.side_effect = ConnectionRefusedError('no daemon')
+        with pytest.raises(UploadValidationError):
+            scan_for_malware(f)
+
+
+def test_upload_endpoint_rejects_infected_file(as_user, employee_user, draft_application, settings):
+    settings.CLAMAV_ENABLED = True
+    f = SimpleUploadedFile('photo.png', PNG_HEADER, content_type='image/png')
+    client = as_user(employee_user)
+    with patch('clamd.ClamdNetworkSocket') as mock_clamd:
+        mock_clamd.return_value.instream.return_value = {'stream': ('FOUND', 'Eicar-Test-Signature')}
+        resp = client.post(
+            f'/api/leave-applications/{draft_application.id}/upload-document/',
+            {'file': f}, format='multipart',
+        )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
+def test_upload_endpoint_rejects_unreachable_scanner(as_user, employee_user, draft_application, settings):
+    """CLAMAV_ENABLED=True but daemon unreachable must fail closed (400), not 500."""
+    settings.CLAMAV_ENABLED = True
+    f = SimpleUploadedFile('photo.png', PNG_HEADER, content_type='image/png')
+    client = as_user(employee_user)
+    with patch('clamd.ClamdNetworkSocket') as mock_clamd:
+        mock_clamd.return_value.instream.side_effect = ConnectionRefusedError('no daemon')
+        resp = client.post(
+            f'/api/leave-applications/{draft_application.id}/upload-document/',
+            {'file': f}, format='multipart',
+        )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
 def test_download_succeeds_for_owner(as_user, employee_user, draft_application):

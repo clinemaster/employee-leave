@@ -230,6 +230,44 @@ DOCUMENTS_ASSETS_DIR = BASE_DIR / 'apps' / 'documents' / 'assets'
 # different system-wide default.
 LEAVE_DEFAULT_ENTITLEMENT_DAYS = config('LEAVE_DEFAULT_ENTITLEMENT_DAYS', default=28, cast=int)
 
+# --- Cache (rate-limit / throttle counter storage) ----------------------
+# DRF's throttle classes (AnonRateThrottle/UserRateThrottle/ScopedRateThrottle)
+# store their counters in the 'default' cache alias by default. Django's
+# built-in LocMemCache is per-process, in-memory — fine for a single dev
+# process or the test suite, but WRONG for a multi-instance/load-balanced
+# deployment: each app instance would keep its own independent counters, so
+# a client could get up to N-times the intended rate limit by being routed
+# across N instances. When REDIS_URL is set, use django-redis so all
+# instances share one counter store and rate limiting is actually enforced
+# across the fleet. When unset (local dev, CI, pytest), fall back to
+# LocMemCache so nothing here requires a live Redis server to run tests.
+REDIS_URL = config('REDIS_URL', default='')
+if REDIS_URL:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+        }
+    }
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
+
+# --- Malware scanning (ClamAV) on uploaded documents ---------------------
+# Off by default (no ClamAV daemon assumed present in dev/CI/most sandboxes).
+# When enabled, apps/documents/uploads.scan_for_malware() connects to a
+# ClamAV daemon over TCP (clamd) and streams the uploaded file to it. See
+# SECURITY.md for the honesty note on what has/hasn't been live-verified.
+CLAMAV_ENABLED = config('CLAMAV_ENABLED', default=False, cast=bool)
+CLAMAV_HOST = config('CLAMAV_HOST', default='localhost')
+CLAMAV_PORT = config('CLAMAV_PORT', default=3310, cast=int)
+
 # --- Email (spec section 47 / section 29 notification routing) ---------
 # Real SMTP, configured via env. When EMAIL_HOST is unset/empty (local dev,
 # CI, the test suite) we fall back to Django's console backend, which prints

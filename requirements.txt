@@ -9,6 +9,10 @@ python-decouple>=3.8
 reportlab>=4.1
 Pillow>=10.2
 openpyxl>=3.1
+pyotp>=2.9
+cryptography>=42.0
+django-redis>=5.4
+clamd>=1.0.2
 
 # Test dependencies
 pytest>=8.0
