@@ -73,7 +73,7 @@ function setupFetch(user: User) {
 
 function renderPage(user: User) {
   const calls = setupFetch(user);
-  const store = makeStore({ user, accessToken: "token", refreshToken: null, isAuthenticated: true });
+  const store = makeStore({ user, accessToken: "token", refreshToken: null, isAuthenticated: true, hydrated: true });
   render(
     <Provider store={store}>
       <SettingsPage />

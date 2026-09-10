@@ -19,6 +19,7 @@ jest.mock("next/navigation", () => ({
 function renderWithState(authState: {
   user: User | null;
   isAuthenticated: boolean;
+  hydrated?: boolean;
 }) {
   const store = configureStore({
     reducer: {
@@ -28,7 +29,13 @@ function renderWithState(authState: {
       [baseApi.reducerPath]: baseApi.reducer,
     },
     preloadedState: {
-      auth: { user: authState.user, accessToken: null, refreshToken: null, isAuthenticated: authState.isAuthenticated },
+      auth: {
+        user: authState.user,
+        accessToken: null,
+        refreshToken: null,
+        isAuthenticated: authState.isAuthenticated,
+        hydrated: authState.hydrated ?? true,
+      },
     },
     middleware: (getDefaultMiddleware) => getDefaultMiddleware().concat(baseApi.middleware),
   });
@@ -83,5 +90,17 @@ describe("RoleGuard", () => {
     renderWithState({ user: makeUser("SYSTEM_ADMIN"), isAuthenticated: true });
     expect(replace).not.toHaveBeenCalled();
     expect(screen.getByText("protected-content")).toBeInTheDocument();
+  });
+
+  it("renders nothing and does not redirect before auth has hydrated from storage, even if isAuthenticated is still false", () => {
+    // Regression test: this is the state on the server render and the
+    // client's very first render (see store/provider.tsx / AuthHydrator).
+    // Redirecting here would bounce an already-logged-in user to /login
+    // before their persisted token has a chance to load; rendering
+    // children here would mismatch the server-rendered (also pre-hydration)
+    // markup.
+    renderWithState({ user: null, isAuthenticated: false, hydrated: false });
+    expect(replace).not.toHaveBeenCalled();
+    expect(screen.queryByText("protected-content")).not.toBeInTheDocument();
   });
 });

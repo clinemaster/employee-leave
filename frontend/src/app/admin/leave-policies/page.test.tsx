@@ -76,7 +76,7 @@ function setupFetch(policies: LeavePolicy[]) {
 
 function renderPage(policies: LeavePolicy[] = [samplePolicy()]) {
   const calls = setupFetch(policies);
-  const store = makeStore({ user: mockAdmin, accessToken: "token", refreshToken: null, isAuthenticated: true });
+  const store = makeStore({ user: mockAdmin, accessToken: "token", refreshToken: null, isAuthenticated: true, hydrated: true });
   render(
     <Provider store={store}>
       <AdminLeavePoliciesPage />

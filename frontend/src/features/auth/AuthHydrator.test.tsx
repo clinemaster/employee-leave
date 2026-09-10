@@ -55,7 +55,7 @@ describe("AuthHydrator", () => {
   it("populates the full user object when a valid token is preloaded", async () => {
     global.fetch = jest.fn().mockResolvedValue(jsonResponse(mockUser)) as unknown as typeof fetch;
 
-    const store = makeStore({ user: null, accessToken: "valid-token", refreshToken: null, isAuthenticated: true });
+    const store = makeStore({ user: null, accessToken: "valid-token", refreshToken: null, isAuthenticated: true, hydrated: true });
     render(
       <Provider store={store}>
         <AuthHydrator />
@@ -89,7 +89,7 @@ describe("AuthHydrator", () => {
     // throw, and the hydrator should render nothing regardless.
     global.fetch = jest.fn().mockResolvedValue(jsonResponse({ detail: "Invalid token" }, 401)) as unknown as typeof fetch;
 
-    const store = makeStore({ user: null, accessToken: "expired-token", refreshToken: null, isAuthenticated: true });
+    const store = makeStore({ user: null, accessToken: "expired-token", refreshToken: null, isAuthenticated: true, hydrated: true });
 
     expect(() =>
       render(

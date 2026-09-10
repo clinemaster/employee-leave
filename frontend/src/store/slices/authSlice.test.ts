@@ -1,6 +1,7 @@
 import authReducer, {
   setCredentials,
   setUser,
+  hydrateFromStorage,
   logout,
   selectCurrentUser,
   selectCurrentUserRole,
@@ -27,6 +28,7 @@ describe("authSlice", () => {
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      hydrated: false,
     });
   });
 
@@ -56,6 +58,19 @@ describe("authSlice", () => {
     expect(state.isAuthenticated).toBe(true);
   });
 
+  it("hydrateFromStorage marks hydrated true and sets tokens/isAuthenticated from a found token", () => {
+    const state = authReducer(undefined, hydrateFromStorage({ accessToken: "stored-token", refreshToken: "stored-refresh" }));
+    expect(state.hydrated).toBe(true);
+    expect(state.accessToken).toBe("stored-token");
+    expect(state.isAuthenticated).toBe(true);
+  });
+
+  it("hydrateFromStorage marks hydrated true but stays unauthenticated when no token was found", () => {
+    const state = authReducer(undefined, hydrateFromStorage({ accessToken: null, refreshToken: null }));
+    expect(state.hydrated).toBe(true);
+    expect(state.isAuthenticated).toBe(false);
+  });
+
   it("logout resets to a logged-out state even from a populated state", () => {
     const populated = authReducer(
       undefined,
@@ -67,6 +82,7 @@ describe("authSlice", () => {
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      hydrated: true,
     });
   });
 

@@ -10,6 +10,7 @@ import { type ReactNode, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAppSelector } from "@/store/hooks";
 import { selectCurrentUser, selectIsAuthenticated } from "@/features/auth/selectors";
+import { selectAuthHydrated } from "@/store/slices/authSlice";
 import { routeRoleMap } from "@/lib/permissions";
 
 export function RoleGuard({ children }: { children: ReactNode }) {
@@ -17,8 +18,15 @@ export function RoleGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   const user = useAppSelector(selectCurrentUser);
+  // False on the server and on the client's first render (see
+  // store/provider.tsx / AuthHydrator) — both render nothing until this
+  // flips true, so server and client markup always match, and a
+  // logged-in user isn't bounced to /login before their token loads.
+  const hydrated = useAppSelector(selectAuthHydrated);
 
   useEffect(() => {
+    if (!hydrated) return;
+
     if (!isAuthenticated) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
@@ -28,9 +36,9 @@ export function RoleGuard({ children }: { children: ReactNode }) {
     if (rule && user && !rule.roles.includes(user.role)) {
       router.replace("/dashboard");
     }
-  }, [isAuthenticated, user, pathname, router]);
+  }, [hydrated, isAuthenticated, user, pathname, router]);
 
-  if (!isAuthenticated) return null;
+  if (!hydrated || !isAuthenticated) return null;
 
   const rule = routeRoleMap.find((r) => pathname.startsWith(r.prefix));
   if (rule && user && !rule.roles.includes(user.role)) return null;

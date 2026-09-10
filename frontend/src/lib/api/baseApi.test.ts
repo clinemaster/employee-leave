@@ -45,6 +45,7 @@ describe("baseApi token-refresh-on-401", () => {
       accessToken: "expired-token",
       refreshToken: "refresh-token",
       isAuthenticated: true,
+      hydrated: true,
     });
 
     const fetchMock = jest.fn();
@@ -79,6 +80,7 @@ describe("baseApi token-refresh-on-401", () => {
       accessToken: "expired-token",
       refreshToken: "stale-refresh-token",
       isAuthenticated: true,
+      hydrated: true,
     });
 
     const fetchMock = jest.fn();
@@ -104,6 +106,7 @@ describe("baseApi token-refresh-on-401", () => {
       accessToken: "expired-token",
       refreshToken: null,
       isAuthenticated: true,
+      hydrated: true,
     });
 
     const fetchMock = jest.fn().mockResolvedValueOnce(jsonResponse({ detail: "token expired" }, 401));
