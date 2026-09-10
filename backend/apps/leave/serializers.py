@@ -1,3 +1,5 @@
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .entitlement import compute_entitlement
@@ -82,6 +84,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             'submitted_at', 'created_at', 'updated_at',
         ]
 
+    @extend_schema_field(OpenApiTypes.INT)
     def get_working_days_preview(self, obj):
         if obj.start_date and obj.last_date:
             return calculate_working_days(obj.start_date, obj.last_date)
@@ -190,12 +193,14 @@ class LeaveBalanceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
 
+    @extend_schema_field(OpenApiTypes.INT)
     def get_computed_entitlement(self, obj):
         """What the policy engine would currently compute for this
         employee/leave_type — for comparison against the stored (possibly
         HR-overridden) `entitlement` value."""
         return compute_entitlement(obj.employee, obj.leave_type, period=obj.period)
 
+    @extend_schema_field(OpenApiTypes.BOOL)
     def get_is_entitlement_overridden(self, obj):
         return obj.entitlement != self.get_computed_entitlement(obj)
 
@@ -208,3 +213,8 @@ class WorkingDaysPreviewSerializer(serializers.Serializer):
         if attrs['end_date'] < attrs['start_date']:
             raise serializers.ValidationError('end_date cannot be before start_date.')
         return attrs
+
+
+class WorkingDaysPreviewResponseSerializer(serializers.Serializer):
+    """Documentation-only: describes WorkingDaysPreviewView's response shape."""
+    working_days = serializers.IntegerField()

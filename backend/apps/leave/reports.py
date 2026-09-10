@@ -11,6 +11,8 @@ import csv
 
 from django.http import HttpResponse
 from django.utils import timezone
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.exceptions import ValidationError
 from rest_framework.negotiation import DefaultContentNegotiation
 from rest_framework.permissions import IsAuthenticated
@@ -124,6 +126,22 @@ class LeaveApplicationReportView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'report_export'
 
+    @extend_schema(
+        parameters=[
+            OpenApiParameter('format', OpenApiTypes.STR, description='csv (default), xlsx, or pdf'),
+            OpenApiParameter('start_date', OpenApiTypes.DATE, description='Filter: submitted/start date >= this'),
+            OpenApiParameter('end_date', OpenApiTypes.DATE, description='Filter: submitted/start date <= this'),
+            OpenApiParameter('department', OpenApiTypes.INT, description='Filter by employee department id'),
+            OpenApiParameter('station', OpenApiTypes.INT, description='Filter by employee station id'),
+            OpenApiParameter('leave_type', OpenApiTypes.INT, description='Filter by leave type id'),
+            OpenApiParameter('status', OpenApiTypes.STR, description='Filter by application status'),
+            OpenApiParameter('employee', OpenApiTypes.INT, description='Filter by employee id'),
+        ],
+        responses={200: OpenApiResponse(
+            response=OpenApiTypes.BINARY,
+            description='A raw file download (text/csv, xlsx, or application/pdf depending on `format`), not JSON.',
+        )},
+    )
     def get(self, request):
         export_format = (request.query_params.get('format') or 'csv').lower()
         if export_format not in ('csv', 'xlsx', 'pdf'):

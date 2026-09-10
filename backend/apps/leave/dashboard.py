@@ -6,6 +6,8 @@ role — mirrors the role-scoped visibility already enforced by
 sees counts for applications they couldn't otherwise view.
 """
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -31,6 +33,19 @@ class DashboardStatsView(APIView):
     """GET /api/dashboard-stats/ — counts scoped to the caller's role."""
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses={200: OpenApiResponse(
+            response=OpenApiTypes.OBJECT,
+            description=(
+                'Count object whose exact keys depend on the caller\'s role — '
+                'see the _employee_stats/_hod_stats/_hr_stats/_ao_stats/_admin_stats '
+                'methods in apps/leave/dashboard.py, or backend/API.md, for the '
+                'per-role shape. Not modeled as a single fixed serializer because '
+                'the shape genuinely differs by role rather than having optional '
+                'fields.'
+            ),
+        )},
+    )
     def get(self, request):
         user = request.user
 

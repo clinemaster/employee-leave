@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate
+from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -10,7 +11,13 @@ from apps.leave.permissions import IsSystemAdmin
 
 from .mfa_views import _issue_challenge_token
 from .models import User
-from .serializers import NaotTokenObtainPairSerializer, UserSerializer, UserWriteSerializer
+from .serializers import (
+    MfaChallengeResponseSerializer,
+    NaotTokenObtainPairSerializer,
+    TokenPairResponseSerializer,
+    UserSerializer,
+    UserWriteSerializer,
+)
 
 
 class LoginView(TokenObtainPairView):
@@ -31,6 +38,13 @@ class LoginView(TokenObtainPairView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
 
+    @extend_schema(
+        responses={200: PolymorphicProxySerializer(
+            component_name='LoginResponse',
+            serializers=[TokenPairResponseSerializer, MfaChallengeResponseSerializer],
+            resource_type_field_name=None,
+        )},
+    )
     def post(self, request, *args, **kwargs):
         username = request.data.get('username')
         password = request.data.get('password')

@@ -18,6 +18,7 @@ scope (default 5/min, see THROTTLE_RATE_MFA_VERIFY) since a 6-digit TOTP
 code is brute-forceable (1e6 combinations) if unthrottled.
 """
 from django.core import signing
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -30,7 +31,9 @@ from .models import User
 from .serializers import (
     MfaDisableSerializer,
     MfaLoginVerifySerializer,
+    MfaSetupResponseSerializer,
     MfaVerifySetupSerializer,
+    TokenPairResponseSerializer,
     UserSerializer,
 )
 
@@ -64,6 +67,7 @@ class MfaSetupView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=None, responses=MfaSetupResponseSerializer)
     def post(self, request):
         user = request.user
         secret = mfa.generate_secret()
@@ -83,6 +87,7 @@ class MfaVerifySetupView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'mfa_verify'
 
+    @extend_schema(request=MfaVerifySetupSerializer, responses=UserSerializer)
     def post(self, request):
         serializer = MfaVerifySetupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -114,6 +119,7 @@ class MfaDisableView(APIView):
     still-logged-in session turning MFA off silently)."""
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=MfaDisableSerializer, responses=UserSerializer)
     def post(self, request):
         serializer = MfaDisableSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -137,6 +143,10 @@ class MfaLoginVerifyView(APIView):
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'mfa_verify'
 
+    @extend_schema(
+        request=MfaLoginVerifySerializer,
+        responses={200: TokenPairResponseSerializer, 400: OpenApiResponse(description='Invalid/expired challenge or code')},
+    )
     def post(self, request):
         serializer = MfaLoginVerifySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

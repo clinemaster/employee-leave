@@ -1,4 +1,6 @@
 from django.db import transaction
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -18,7 +20,7 @@ from .permissions import (
 from .serializers import (
     HolidaySerializer, LeaveApplicationSerializer, LeaveApplicationWriteSerializer,
     LeaveBalanceSerializer, LeavePolicySerializer, LeaveTypeSerializer,
-    WorkflowActionSerializer, WorkingDaysPreviewSerializer,
+    WorkflowActionSerializer, WorkingDaysPreviewResponseSerializer, WorkingDaysPreviewSerializer,
 )
 from .workflow import WorkflowError, perform_transition
 from .workingdays import calculate_working_days
@@ -105,6 +107,8 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ['employee', 'leave_type', 'period']
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return LeaveBalance.objects.none()
         user = self.request.user
         qs = LeaveBalance.objects.all()
         from .permissions import is_hr_admin, is_authorizing_officer, is_system_admin
@@ -163,6 +167,7 @@ class WorkingDaysPreviewView(APIView):
     on save."""
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(request=WorkingDaysPreviewSerializer, responses=WorkingDaysPreviewResponseSerializer)
     def post(self, request):
         serializer = WorkingDaysPreviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -217,6 +222,8 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     throttle_scope = None
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return LeaveApplication.objects.none()
         qs = LeaveApplication.objects.select_related(
             'employee', 'leave_type', 'recommendation', 'hr_review', 'approval'
         ).prefetch_related('dependants')
@@ -394,6 +401,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
+    @extend_schema(
+        parameters=[OpenApiParameter('document_id', OpenApiTypes.INT, OpenApiParameter.PATH)],
+        responses={200: OpenApiResponse(response=OpenApiTypes.BINARY, description='The raw file.')},
+    )
     @action(detail=True, methods=['get'], url_path=r'documents/(?P<document_id>[^/.]+)/download')
     def download_document(self, request, pk=None, document_id=None):
         """

@@ -80,3 +80,22 @@ class MfaDisableSerializer(serializers.Serializer):
 class MfaLoginVerifySerializer(serializers.Serializer):
     mfa_token = serializers.CharField()
     code = serializers.CharField(max_length=8, min_length=6)
+
+
+# --- MFA / auth response shapes (documentation only — never used to parse
+# incoming data, only to describe outgoing shapes for the OpenAPI schema) --
+
+class MfaSetupResponseSerializer(serializers.Serializer):
+    secret = serializers.CharField()
+    provisioning_uri = serializers.CharField()
+
+
+class TokenPairResponseSerializer(serializers.Serializer):
+    access = serializers.CharField()
+    refresh = serializers.CharField()
+    user = UserSerializer()
+
+
+class MfaChallengeResponseSerializer(serializers.Serializer):
+    mfa_required = serializers.BooleanField()
+    mfa_token = serializers.CharField()

@@ -13,6 +13,7 @@ pyotp>=2.9
 cryptography>=42.0
 django-redis>=5.4
 clamd>=1.0.2
+drf-spectacular>=0.27
 
 # Test dependencies
 pytest>=8.0

@@ -6,6 +6,25 @@ Auth: JWT (djangorestframework-simplejwt), `Authorization: Bearer <access>`.
 All list endpoints are paginated (`PageNumberPagination`, `page_size=25`):
 `{"count", "next", "previous", "results": [...]}`.
 
+## Interactive API docs (Swagger / OpenAPI)
+
+Generated automatically from the actual DRF views/serializers via
+[drf-spectacular](https://drf-spectacular.readthedocs.io/), so it can't drift
+from this hand-written document the way a manually maintained spec can:
+
+- **`GET /api/docs/`** — Swagger UI (try-it-out console; "Authorize" button
+  accepts a JWT access token, scheme `Bearer`).
+- **`GET /api/redoc/`** — ReDoc, a read-only reference layout some prefer for
+  browsing.
+- **`GET /api/schema/`** — the raw OpenAPI 3 schema (YAML), importable into
+  Postman/Insomnia or any OpenAPI-based tooling.
+
+All three are intentionally public (`AllowAny`) even though the rest of the
+API defaults to `IsAuthenticated` — they describe endpoint shapes, not data,
+and requiring a login just to read docs is poor DX. `apps/leave/tests/
+test_openapi_schema.py` guards against the schema silently losing endpoints
+or failing OpenAPI validation as the API evolves.
+
 ## Auth
 
 ### POST /api/auth/login/

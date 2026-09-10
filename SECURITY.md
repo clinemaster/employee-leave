@@ -224,6 +224,15 @@ mandatory for any role (including SYSTEM_ADMIN / AUTHORIZING_OFFICER — see
   invalid-token, disable password check, self-service-only scope,
   throttling).
 
+**API documentation (Swagger/OpenAPI)** — `drf-spectacular` generates docs
+from the actual views/serializers at `/api/docs/` (Swagger UI), `/api/redoc/`
+(ReDoc), and `/api/schema/` (raw OpenAPI YAML). All three are deliberately
+public (`AllowAny`), same posture as any public API reference — they expose
+endpoint *shapes*, not data or secrets. If a future deployment wants these
+gated (e.g. an internal-only API with no public docs appetite), that's a
+one-line change to `permission_classes` on the three routes in
+`naot_leave/urls.py`.
+
 ## Known gaps / TODOs for production
 
 - **No account lockout** after repeated failed logins beyond the rate

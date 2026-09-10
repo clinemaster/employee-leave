@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'django_filters',
     'corsheaders',
+    'drf_spectacular',
 
     # Local apps
     'apps.accounts',
@@ -150,6 +151,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 25,
     'EXCEPTION_HANDLER': 'apps.leave.exceptions.custom_exception_handler',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     # Rate limiting (brute-force / resource-abuse protection). 'anon'/'user'
     # are blanket defaults applied to every request; 'login', 'pdf_export'
     # and 'report_export' are tighter per-endpoint scopes applied via
@@ -172,6 +174,21 @@ REST_FRAMEWORK = {
         # TOTP codes are 6 digits (1e6 combinations) — throttle tightly.
         'mfa_verify': config('THROTTLE_RATE_MFA_VERIFY', default='5/min'),
     },
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'NAOT Digital Leave Management System API',
+    'DESCRIPTION': (
+        'REST API for the National Audit Office of Tanzania Digital Leave '
+        'Management System — employee leave applications, the HOD/HR/'
+        'Authorizing Officer workflow, document generation, and reporting. '
+        'Authenticate with a JWT bearer token obtained from POST '
+        '/api/auth/login/ (see the "Authorize" button, scheme "Bearer").'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SCHEMA_PATH_PREFIX': '/api/',
 }
 
 SIMPLE_JWT = {
