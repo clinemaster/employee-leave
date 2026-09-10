@@ -38,13 +38,31 @@ normal_style = ParagraphStyle('NaotNormal', parent=styles['Normal'], fontSize=9)
 small_style = ParagraphStyle('NaotSmall', parent=styles['Normal'], fontSize=8, textColor=colors.grey)
 
 
+LOGO_BOX_CM = 3.0  # max width/height a header logo/emblem is scaled to fit within
+
+
+def _fit_image(path, max_dim_cm):
+    """Load `path` scaled to fit within a max_dim_cm x max_dim_cm box,
+    preserving its native aspect ratio (avoids stretching a non-square
+    emblem/logo into a distorted square)."""
+    max_dim = max_dim_cm * cm
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(path) as im:
+            native_w, native_h = im.size
+    except Exception:
+        native_w, native_h = 1, 1
+    scale = min(max_dim / native_w, max_dim / native_h)
+    return Image(path, width=native_w * scale, height=native_h * scale)
+
+
 def _header_block():
     elements = []
     emblem_path = os.path.join(ASSETS_DIR, 'emblem_placeholder.png')
     logo_path = os.path.join(ASSETS_DIR, 'naot_logo_placeholder.png')
     logos = []
     if os.path.exists(emblem_path):
-        logos.append(Image(emblem_path, width=1.6 * cm, height=1.6 * cm))
+        logos.append(_fit_image(emblem_path, LOGO_BOX_CM))
     else:
         logos.append(Paragraph('[Emblem]', small_style))
     logos.append(Paragraph(
@@ -54,14 +72,16 @@ def _header_block():
         title_style,
     ))
     if os.path.exists(logo_path):
-        logos.append(Image(logo_path, width=1.6 * cm, height=1.6 * cm))
+        logos.append(_fit_image(logo_path, LOGO_BOX_CM))
     else:
         logos.append(Paragraph('[NAOT Logo]', small_style))
 
-    header_table = Table([logos], colWidths=[2.2 * cm, 12.6 * cm, 2.2 * cm])
+    header_table = Table([logos], colWidths=[3.6 * cm, 10.8 * cm, 3.6 * cm])
     header_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (0, 0), 'CENTER'),
         ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+        ('ALIGN', (2, 0), (2, 0), 'CENTER'),
     ]))
     elements.append(header_table)
     elements.append(Spacer(1, 0.4 * cm))
