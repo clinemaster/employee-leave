@@ -53,7 +53,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectCurrentUser);
-  const navItems = user ? navByRole[user.role] ?? [] : [];
+  const navItems = user ? [...(navByRole[user.role] ?? []), { label: "Settings", href: "/settings" }] : [];
 
   function handleLogout() {
     clearTokens();

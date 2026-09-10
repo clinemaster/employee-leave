@@ -189,8 +189,40 @@ infrastructure yet — verify on the first push/PR.
 minimum length, common-password, numeric-password checks) is enabled, now
 with an explicit minimum length of 10 (env: `PASSWORD_MIN_LENGTH`,
 previously relying on Django's unconfigured default of 8) — a slightly
-stronger bar appropriate for a government HR system. Still no MFA (see
-"Known gaps").
+stronger bar appropriate for a government HR system.
+
+**MFA (implemented, opt-in)** — TOTP-based two-factor authentication
+(`apps/accounts/mfa.py`, `mfa_views.py`), compatible with any standard
+authenticator app (Google Authenticator, Authy, 1Password, etc.), via
+`pyotp`. Any role may enable it for their own account; it is not yet
+mandatory for any role (including SYSTEM_ADMIN / AUTHORIZING_OFFICER — see
+"Known gaps" for the enforcement-by-role follow-up).
+- `User.mfa_secret` is encrypted at rest with Fernet (key derived from
+  `SECRET_KEY` via SHA-256) — never stored as plaintext, and never included
+  in any API response (not even write-only) — see `UserSerializer` and the
+  dedicated MFA request serializers.
+- `POST /api/auth/mfa/setup/` generates a secret + `otpauth://` provisioning
+  URI (does not enable MFA yet); `POST /api/auth/mfa/verify-setup/` confirms
+  a live code and flips `mfa_enabled=True`; `POST /api/auth/mfa/disable/`
+  requires the user's current password. All three act only on the
+  requesting user's own account — self-service only in this phase, no admin
+  override to set/clear MFA for someone else.
+- Login: an MFA-enabled user's `POST /api/auth/login/` returns
+  `{"mfa_required": true, "mfa_token": "..."}` (a signed, 5-minute-lived
+  token, `django.core.signing`) instead of a JWT pair; the client then calls
+  `POST /api/auth/mfa/login-verify/` with that token + a TOTP code to
+  receive the real access/refresh pair.
+- Replay protection: `User.mfa_last_verified_step` records the last TOTP
+  time-step consumed at login, so a captured/observed login code can't be
+  replayed even while it's still numerically valid within its window.
+- Rate limiting: `verify-setup` and `login-verify` share a new
+  `mfa_verify` `ScopedRateThrottle` scope (default 5/min, env
+  `THROTTLE_RATE_MFA_VERIFY`) — a 6-digit code is only ~1e6 combinations and
+  must be throttled tightly regardless of the blanket per-user/anon rates.
+- Tests: `backend/apps/accounts/tests/test_mfa.py` (setup, verify-setup
+  success/failure, login challenge, login-verify success/wrong-code/replay/
+  invalid-token, disable password check, self-service-only scope,
+  throttling).
 
 ## Known gaps / TODOs for production
 
@@ -199,7 +231,17 @@ stronger bar appropriate for a government HR system. Still no MFA (see
   rate), which meaningfully slows brute force, but there is no
   per-account lockout/backoff independent of the throttle (e.g. locking an
   account after N failed attempts regardless of source IP/client).
-- **No MFA** — password-only authentication.
+- **MFA is opt-in, not enforced by role.** TOTP MFA is implemented and
+  self-service (see "Implemented" above), but nothing in code requires
+  SYSTEM_ADMIN / AUTHORIZING_OFFICER (the highest-value targets) to have it
+  enabled — a compromised password alone is still sufficient for an account
+  that hasn't opted in. Enforcing MFA for specific roles (reject login, or
+  force a setup prompt, until enabled) is a follow-up, not yet built.
+- **No backup/recovery codes for MFA.** If a user loses their authenticator
+  device, there is currently no self-service recovery path — re-enabling
+  access requires a SYSTEM_ADMIN (via Django admin/shell) to clear
+  `mfa_enabled`/`mfa_secret` on their behalf. One-time backup codes are a
+  natural follow-up.
 - **Secrets management** — configuration is read from plain environment
   variables / `.env` via `python-decouple`, with no integration with a
   dedicated secrets manager (Vault, AWS/GCP Secrets Manager, etc.). The
@@ -248,9 +290,11 @@ secret-fallback protection, stronger password policy, a minimal, validated,
 authenticated-only supporting-document upload/download path, CI
 dependency/vulnerability scanning (pip-audit, npm audit, GitHub dependency
 review) on every push/PR, a shared Redis cache backend for correct
-multi-instance rate limiting (opt-in via `REDIS_URL`), and ClamAV malware
+multi-instance rate limiting (opt-in via `REDIS_URL`), ClamAV malware
 scanning on uploads (opt-in via `CLAMAV_ENABLED`, unit-tested against a
-mocked scanner but not yet exercised against a live daemon — see above).
-What's left (MFA, account lockout, a real secrets manager,
+mocked scanner but not yet exercised against a live daemon — see above),
+and TOTP-based MFA (opt-in per user, self-service setup/disable, replay-
+protected and rate-limited login-verify step). What's left (MFA enforced
+by role, MFA recovery codes, account lockout, a real secrets manager,
 logging/monitoring) is genuinely out of scope for a code-only pass and is
 called out above rather than left implicit.

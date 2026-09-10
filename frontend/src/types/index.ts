@@ -33,6 +33,7 @@ export interface User {
   phone_number?: string | null;
   date_of_first_appointment?: string | null;
   is_active: boolean;
+  mfa_enabled?: boolean;
 }
 
 export type LeaveStatus =
