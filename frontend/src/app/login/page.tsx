@@ -70,7 +70,7 @@ function LoginForm() {
 
   if (mfaToken) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <LoginBackground>
         <Card className="w-full max-w-sm">
           <h1 className="mb-1 text-xl font-semibold text-gray-900">Two-Factor Verification</h1>
           <p className="mb-6 text-sm text-gray-500">
@@ -109,12 +109,12 @@ function LoginForm() {
             </Button>
           </form>
         </Card>
-      </main>
+      </LoginBackground>
     );
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+    <LoginBackground>
       <Card className="w-full max-w-sm">
         <h1 className="mb-1 text-xl font-semibold text-gray-900">NAOT Leave Management</h1>
         <p className="mb-6 text-sm text-gray-500">Sign in to continue</p>
@@ -149,6 +149,29 @@ function LoginForm() {
           </Button>
         </form>
       </Card>
+    </LoginBackground>
+  );
+}
+
+// Shared background for both the credentials and MFA-challenge screens: the
+// NAOT logo rendered as a large, faint, centered watermark behind the card.
+function LoginBackground({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 flex items-center justify-center"
+      >
+        {/* Plain <img>, not next/image: a static watermark doesn't need
+            responsive srcset/optimization, and this keeps it simple. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/naot-logo.png"
+          alt=""
+          className="h-[70vmin] w-[70vmin] max-w-none object-contain opacity-10"
+        />
+      </div>
+      <div className="relative z-10">{children}</div>
     </main>
   );
 }
