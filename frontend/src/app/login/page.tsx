@@ -116,7 +116,7 @@ function LoginForm() {
   return (
     <LoginBackground>
       <Card className="w-full max-w-sm">
-        <h1 className="mb-1 text-xl font-semibold text-gray-900">NAOT Leave Management</h1>
+        <h1 className="mb-1 text-xl font-semibold text-gray-900">Leave Management</h1>
         <p className="mb-6 text-sm text-gray-500">Sign in to continue</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
