@@ -170,7 +170,7 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
           className="h-full w-full object-contain opacity-10"
         />
       </div>
-      <div className="relative z-10 md:-translate-x-16">{children}</div>
+      <div className="relative z-10 md:-translate-x-32">{children}</div>
     </main>
   );
 }
