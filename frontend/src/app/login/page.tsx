@@ -161,13 +161,13 @@ function LoginBackground({ children }: { children: React.ReactNode }) {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
         {/* Plain <img>, not next/image: a static watermark doesn't need
             responsive srcset/optimization, and this keeps it simple.
-            object-cover fills the full viewport edge-to-edge (cropping the
-            logo as needed) rather than being boxed to a fixed size. */}
+            object-contain (not cover) keeps the whole logo visible,
+            uncropped, at just under full viewport size. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/naot-logo.png"
           alt=""
-          className="h-full w-full object-cover opacity-10"
+          className="h-full w-full object-contain opacity-10"
         />
       </div>
       <div className="relative z-10">{children}</div>
