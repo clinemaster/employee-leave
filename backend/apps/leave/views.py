@@ -338,13 +338,16 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             document = generate_leave_application_pdf(application, request.user)
         except WorkflowError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(_LeaveDocumentSerializer(document).data, status=status.HTTP_201_CREATED)
+        return Response(
+            _LeaveDocumentSerializer(document, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['get'])
     def documents(self, request, pk=None):
         application = self.get_object()
         docs = application.documents.filter(is_active=True)
-        return Response(_LeaveDocumentSerializer(docs, many=True).data)
+        return Response(_LeaveDocumentSerializer(docs, many=True, context={'request': request}).data)
 
     @action(
         detail=True, methods=['post'], url_path='upload-document',
@@ -386,7 +389,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             generated_by=request.user,
         )
         document.file.save(upload.name, upload, save=True)
-        return Response(_LeaveDocumentSerializer(document).data, status=status.HTTP_201_CREATED)
+        return Response(
+            _LeaveDocumentSerializer(document, context={'request': request}).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=['get'], url_path=r'documents/(?P<document_id>[^/.]+)/download')
     def download_document(self, request, pk=None, document_id=None):

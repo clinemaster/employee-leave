@@ -7,6 +7,17 @@ from apps.accounts.models import Role, User
 from apps.leave.models import LeaveType
 
 
+@pytest.fixture(autouse=True)
+def _isolated_media_root(settings, tmp_path):
+    """
+    Redirect all file storage (generated PDFs, uploads) to a per-test temp
+    directory instead of the real MEDIA_ROOT. Without this, running the test
+    suite writes/overwrites files under the actual dev media/ folder,
+    clobbering real applications' generated documents.
+    """
+    settings.MEDIA_ROOT = tmp_path / 'media'
+
+
 @pytest.fixture
 def api_client():
     return APIClient()
