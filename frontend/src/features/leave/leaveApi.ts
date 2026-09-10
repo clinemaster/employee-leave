@@ -208,6 +208,7 @@ export const {
   useDenyLeaveApplicationMutation,
   useGenerateLeavePdfMutation,
   useGetLeaveDocumentsQuery,
+  useLazyGetLeaveDocumentsQuery,
   useGetLeaveAuditTrailQuery,
   usePreviewWorkingDaysMutation,
 } = leaveApi;
