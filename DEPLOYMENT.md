@@ -232,7 +232,7 @@ data (see §7).
 cd backend
 python -m venv .venv
 .venv/Scripts/activate   # or source .venv/bin/activate on Linux
-pip install -r ../requirements.txt
+pip install -r requirements.txt
 python manage.py collectstatic --noinput
 python manage.py migrate
 ```

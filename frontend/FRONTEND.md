@@ -2,21 +2,30 @@
 
 This document describes the frontend slice built by the FRONTEND agent: a Next.js (App Router) +
 TypeScript + Redux Toolkit + RTK Query application implementing phase 1 of the leave management
-workflow, wired against the backend's published `/API.md`.
+workflow, wired against the backend's published `backend/API.md`.
 
 ## Location
 
-The Next.js app lives in `./frontend`. The Django project lives in `./backend` (DATABASE/BACKEND
-agents). This repo is a small monorepo:
+The Next.js app lives in `./frontend` and is fully self-contained (all frontend code, config, and
+this doc live under it). The Django project lives in `./backend`, also fully self-contained
+(code, `requirements.txt`, and its own docs). This repo is a small monorepo:
 
 ```
 employee-leave/
-├── backend/       ← Django REST Framework backend
-├── frontend/      ← this Next.js app
-├── API.md         ← backend's published endpoint/serializer spec (source of truth used here)
-├── SCHEMA.md       ← backend's model/schema notes
-└── FRONTEND.md
+├── backend/
+│   ├── API.md      ← backend's published endpoint/serializer spec (source of truth used here)
+│   ├── SCHEMA.md    ← backend's model/schema notes
+│   ├── requirements.txt
+│   └── ...          Django REST Framework backend code
+├── frontend/
+│   ├── FRONTEND.md  ← this file
+│   └── ...           this Next.js app
+├── DEPLOYMENT.md    ← project-wide: deploys both halves
+└── SECURITY.md      ← project-wide: security posture across both halves
 ```
+
+References to `/API.md` and `/SCHEMA.md` elsewhere in this document predate this reorganization
+and mean `../backend/API.md` / `../backend/SCHEMA.md` relative to this file.
 
 Run it with:
 
