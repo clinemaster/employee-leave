@@ -139,6 +139,38 @@ describe("AdminLeavePoliciesPage", () => {
     expect(await screen.findByText(/Leave type and annual entitlement are required/i)).toBeInTheDocument();
   });
 
+  it("renders the designation column, showing 'All' when unset", async () => {
+    renderPage([samplePolicy({ designation: "Auditor General" }), samplePolicy({ id: 11, designation: "" })]);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByText("Auditor General")).toBeInTheDocument();
+    expect(within(table).getByText("All")).toBeInTheDocument();
+  });
+
+  it("submits the create form with a designation value", async () => {
+    const user = userEvent.setup();
+    const { calls } = renderPage([]);
+
+    await screen.findByText(/No policies configured/i);
+
+    const leaveTypeSelect = screen.getByLabelText("Leave Type");
+    await user.selectOptions(leaveTypeSelect, "2");
+    await user.type(screen.getByLabelText("Designation"), "Auditor General");
+    await user.type(screen.getByLabelText("Annual Entitlement (days)"), "14");
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      const postCall = calls.find((c) => c.method === "POST" && c.url.includes("leave-policies/"));
+      expect(postCall).toBeTruthy();
+      expect(postCall?.body).toMatchObject({
+        leave_type: 2,
+        designation: "Auditor General",
+        annual_entitlement: 14,
+      });
+    });
+  });
+
   it("deletes a policy via the Delete button", async () => {
     const user = userEvent.setup();
     const { calls } = renderPage([samplePolicy({ id: 42 })]);

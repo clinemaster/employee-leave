@@ -99,18 +99,26 @@ decimal). Unique per `(employee, leave_type, period)`.
 
 **LeavePolicy**: admin-configurable rule used to auto-derive `entitlement`
 for a `LeaveBalance` (spec section 9's "leave types are configurable" +
-section 40 balance spec). Fields: `leave_type` FK, `min_years_of_service` /
+section 40 balance spec). Fields: `leave_type` FK, `designation` (blank
+`CharField` — optional job grade/designation this rule applies to, matched
+case-insensitively/exactly against `accounts.User.designation`; blank means
+it applies to any designation), `min_years_of_service` /
 `max_years_of_service` (nullable `PositiveIntegerField`s — both null means a
 flat, non-tenure-banded rule), `annual_entitlement` (decimal, days),
-`is_active`, `sort_order` (lower matches first), `description`,
+`is_active`, `sort_order` (tiebreaker only — see below), `description`,
 `created_at`/`updated_at`. Matching logic lives in
-`apps/leave/entitlement.py`: for an employee/leave_type, the first active
-policy (ordered by `sort_order`) whose band contains the employee's tenure —
-computed from `accounts.User.date_of_first_appointment` — wins; an employee
-with no `date_of_first_appointment` only matches flat (un-banded) policies.
-If no policy matches, `LEAVE_DEFAULT_ENTITLEMENT_DAYS` (settings/env,
-default `28`) is used. This never raises — missing policy configuration
-always falls back cleanly. `LeaveBalance.entitlement`/`opening_balance` are
+`apps/leave/entitlement.py`: for an employee/leave_type, every active policy
+whose designation (if set) matches the employee's `designation` and whose
+tenure band (if set) contains the employee's years of service — computed
+from `accounts.User.date_of_first_appointment` — is a candidate; among
+candidates, the most *specific* one wins (a policy matching both
+designation and tenure band beats one matching only one of those, which
+beats a flat/all-designations rule), with `sort_order` then `id` used only
+to break ties between equally-specific candidates. An employee with no
+`date_of_first_appointment` only matches flat (un-banded) policies. If no
+policy matches, `LEAVE_DEFAULT_ENTITLEMENT_DAYS` (settings/env, default
+`28`) is used. This never raises — missing policy configuration always
+falls back cleanly. `LeaveBalance.entitlement`/`opening_balance` are
 auto-populated from this engine only when a balance row is first created
 (`apps/leave/balances.py:recalculate_balance`); HR/admin overrides made
 afterwards are preserved on subsequent recalculations.

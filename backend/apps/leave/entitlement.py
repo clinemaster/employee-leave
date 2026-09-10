@@ -35,32 +35,57 @@ def years_of_service(employee, as_of=None):
     return max(years, 0)
 
 
-def _policy_matches(policy, tenure_years):
+def _policy_matches(policy, tenure_years, designation):
     if tenure_years is None:
         # Unknown tenure only matches flat (un-banded) policies.
-        return policy.min_years_of_service is None and policy.max_years_of_service is None
-    if policy.min_years_of_service is not None and tenure_years < policy.min_years_of_service:
-        return False
-    if policy.max_years_of_service is not None and tenure_years > policy.max_years_of_service:
-        return False
+        if policy.min_years_of_service is not None or policy.max_years_of_service is not None:
+            return False
+    else:
+        if policy.min_years_of_service is not None and tenure_years < policy.min_years_of_service:
+            return False
+        if policy.max_years_of_service is not None and tenure_years > policy.max_years_of_service:
+            return False
+    if policy.designation:
+        if not designation or policy.designation.strip().lower() != designation.strip().lower():
+            return False
     return True
+
+
+def _specificity(policy):
+    """
+    Number of non-null match criteria this policy applies (designation +
+    tenure band), used to rank matches by specificity: a policy matching
+    both designation and tenure band beats one matching only tenure or
+    only designation, which beats a flat/default rule.
+    """
+    score = 0
+    if policy.designation:
+        score += 1
+    if policy.min_years_of_service is not None or policy.max_years_of_service is not None:
+        score += 1
+    return score
 
 
 def find_matching_policy(employee, leave_type, as_of=None):
     """
-    Returns the first (lowest sort_order) active LeavePolicy matching this
-    employee's tenure for `leave_type`, or None if none match.
+    Returns the most specific active LeavePolicy matching this employee's
+    tenure and designation for `leave_type`, or None if none match.
+    Specificity (designation + tenure band both matched beats either alone,
+    beats a flat rule) is the primary ranking; `sort_order` (then `id`) is
+    only the tiebreaker within equal specificity.
     """
     from .models import LeavePolicy
 
     tenure_years = years_of_service(employee, as_of=as_of)
+    designation = getattr(employee, 'designation', None)
     policies = LeavePolicy.objects.filter(
         leave_type=leave_type, is_active=True
     ).order_by('sort_order', 'id')
-    for policy in policies:
-        if _policy_matches(policy, tenure_years):
-            return policy
-    return None
+    matches = [p for p in policies if _policy_matches(p, tenure_years, designation)]
+    if not matches:
+        return None
+    matches.sort(key=lambda p: (-_specificity(p), p.sort_order, p.id))
+    return matches[0]
 
 
 def compute_entitlement(employee, leave_type, period=None, as_of=None):

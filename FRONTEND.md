@@ -39,15 +39,20 @@ warnings about `react-hook-form`'s `watch()` not being memoizable — expected, 
 
 - **Leave Policies admin UI**: `/admin/leave-policies` (SYSTEM_ADMIN only) — list of `LeavePolicy`
   rows sorted by leave type then tenure band/`sort_order`, a create/edit form (leave type select,
-  optional min/max years-of-service tenure band, annual entitlement, sort order, description, an
-  Active checkbox), and delete — same useState-driven CRUD pattern as `/admin/leave-types` /
-  `/admin/organization` (no react-hook-form/zod here, matching those pages, not the multi-step
-  application form). Backed by `features/leave/policiesApi.ts` (`getLeavePolicies`,
-  `getLeavePolicy`, `createLeavePolicy`, `updateLeavePolicy`, `deleteLeavePolicy` against
-  `/api/leave-policies/`, tag `LeavePolicies` added to `baseApi`, list/item tag invalidation).
-  `types/index.ts` gained a `LeavePolicy` interface matching `LeavePolicySerializer` field-for-field.
-  Nav link added to `AppShell`'s SYSTEM_ADMIN section, alongside Leave Types/Holidays/Users/
-  Organization/Reports.
+  optional designation text input, optional min/max years-of-service tenure band, annual
+  entitlement, sort order, description, an Active checkbox), and delete — same useState-driven CRUD
+  pattern as `/admin/leave-types` / `/admin/organization` (no react-hook-form/zod here, matching
+  those pages, not the multi-step application form). Backed by `features/leave/policiesApi.ts`
+  (`getLeavePolicies`, `getLeavePolicy`, `createLeavePolicy`, `updateLeavePolicy`,
+  `deleteLeavePolicy` against `/api/leave-policies/`, tag `LeavePolicies` added to `baseApi`,
+  list/item tag invalidation). `types/index.ts` gained a `LeavePolicy` interface matching
+  `LeavePolicySerializer` field-for-field. Nav link added to `AppShell`'s SYSTEM_ADMIN section,
+  alongside Leave Types/Holidays/Users/Organization/Reports.
+  - **Designation field** (later addition): the create/edit form gained a `designation` text input
+    ("leave blank to apply to all designations") next to Leave Type, and the list table gained a
+    Designation column (showing "All" when unset) between Leave Type and Tenure Band — lets admins
+    configure grade/designation-specific entitlement rules (e.g. Auditor General vs Clerk), which
+    the backend ranks by specificity alongside tenure bands (`apps/leave/entitlement.py`).
 - **Computed-entitlement preview**: `LeaveBalance` type extended with the new read-only comparison
   fields per `/API.md` (`opening_balance`, `entitlement`, `taken`, `pending`, `remaining`,
   `computed_entitlement`, `is_entitlement_overridden`); `balance_days` kept as optional for

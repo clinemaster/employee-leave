@@ -246,13 +246,25 @@ class LeavePolicy(models.Model):
     `min_years_of_service`/`max_years_of_service` are optional (nullable)
     bounds on the employee's tenure, in whole years, computed from
     `User.date_of_first_appointment`. A flat, non-tenure-banded policy for a
-    leave type simply leaves both null. When multiple policies exist for the
-    same leave type, the most specific (tenure-banded) ones should be
-    ordered first via `sort_order` — matching is first-match-wins, see
-    `apps/leave/entitlement.py`.
+    leave type simply leaves both null. `designation` is an optional
+    (blank) free-text match against `accounts.User.designation`
+    (case-insensitive exact match); blank means the policy applies to any
+    designation. When multiple policies could match the same employee, the
+    most specific one wins (see `apps/leave/entitlement.py:_specificity`) —
+    a policy matching both designation and tenure band beats one matching
+    only tenure, which beats a flat/default rule; `sort_order` is only the
+    tiebreaker within equal specificity.
     """
     leave_type = models.ForeignKey(
         LeaveType, on_delete=models.CASCADE, related_name='policies'
+    )
+    designation = models.CharField(
+        max_length=255, blank=True,
+        help_text=(
+            'Optional job grade/designation this rule applies to (matched '
+            'case-insensitively against the employee\'s designation). '
+            'Leave blank to apply to all designations.'
+        ),
     )
     min_years_of_service = models.PositiveIntegerField(
         null=True, blank=True,
@@ -284,7 +296,8 @@ class LeavePolicy(models.Model):
         band = ''
         if self.min_years_of_service is not None or self.max_years_of_service is not None:
             band = f' [{self.min_years_of_service or 0}-{self.max_years_of_service if self.max_years_of_service is not None else "+"} yrs]'
-        return f'{self.leave_type}{band}: {self.annual_entitlement} days'
+        desig = f' ({self.designation})' if self.designation else ''
+        return f'{self.leave_type}{desig}{band}: {self.annual_entitlement} days'
 
 
 class LeaveBalance(models.Model):

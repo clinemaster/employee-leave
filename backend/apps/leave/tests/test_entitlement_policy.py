@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 
 from apps.leave.balances import recalculate_balance
-from apps.leave.entitlement import compute_entitlement, years_of_service
+from apps.leave.entitlement import compute_entitlement, find_matching_policy, years_of_service
 from apps.leave.models import LeaveBalance, LeavePolicy
 
 pytestmark = pytest.mark.django_db
@@ -186,3 +186,104 @@ def test_policy_max_less_than_min_rejected(as_user, sysadmin_user, leave_type):
         'min_years_of_service': 10, 'max_years_of_service': 5,
     }, format='json')
     assert resp.status_code == 400
+
+
+# --- designation-based matching / specificity ranking ----------------------
+
+
+def test_designation_only_match(employee_user, leave_type):
+    employee_user.designation = 'Auditor General'
+    LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General',
+        annual_entitlement=Decimal('35.00'),
+    )
+    assert compute_entitlement(employee_user, leave_type) == Decimal('35.00')
+
+
+def test_designation_match_is_case_insensitive(employee_user, leave_type):
+    employee_user.designation = 'auditor general'
+    LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General',
+        annual_entitlement=Decimal('35.00'),
+    )
+    assert compute_entitlement(employee_user, leave_type) == Decimal('35.00')
+
+
+def test_designation_mismatch_does_not_match(employee_user, leave_type):
+    employee_user.designation = 'Clerk'
+    LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General',
+        annual_entitlement=Decimal('35.00'),
+    )
+    LeavePolicy.objects.create(leave_type=leave_type, annual_entitlement=Decimal('28.00'))
+    assert compute_entitlement(employee_user, leave_type) == Decimal('28.00')
+
+
+def test_tenure_only_match_when_no_designation_policy(employee_user, leave_type):
+    employee_user.designation = 'Clerk'
+    employee_user.date_of_first_appointment = _today().replace(year=_today().year - 6)
+    LeavePolicy.objects.create(
+        leave_type=leave_type, min_years_of_service=5, max_years_of_service=None,
+        annual_entitlement=Decimal('30.00'),
+    )
+    assert compute_entitlement(employee_user, leave_type) == Decimal('30.00')
+
+
+def test_designation_and_tenure_match_beats_either_alone(employee_user, leave_type):
+    employee_user.designation = 'Auditor General'
+    employee_user.date_of_first_appointment = _today().replace(year=_today().year - 6)
+
+    # Designation-only policy (specificity 1).
+    LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General',
+        annual_entitlement=Decimal('32.00'), sort_order=0,
+    )
+    # Tenure-only policy (specificity 1).
+    LeavePolicy.objects.create(
+        leave_type=leave_type, min_years_of_service=5,
+        annual_entitlement=Decimal('30.00'), sort_order=0,
+    )
+    # Combined designation + tenure policy (specificity 2) — should win even
+    # though its sort_order is higher than the others.
+    combined = LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General', min_years_of_service=5,
+        annual_entitlement=Decimal('40.00'), sort_order=99,
+    )
+    assert compute_entitlement(employee_user, leave_type) == Decimal('40.00')
+    assert find_matching_policy(employee_user, leave_type).id == combined.id
+
+
+def test_no_match_falls_back_to_default(employee_user, leave_type):
+    employee_user.designation = 'Clerk'
+    employee_user.date_of_first_appointment = _today().replace(year=_today().year - 1)
+    LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General', min_years_of_service=5,
+        annual_entitlement=Decimal('40.00'),
+    )
+    assert compute_entitlement(employee_user, leave_type) == Decimal('28')
+
+
+def test_ambiguous_same_specificity_uses_sort_order_tiebreaker(employee_user, leave_type):
+    employee_user.designation = 'Auditor General'
+    employee_user.date_of_first_appointment = _today().replace(year=_today().year - 6)
+
+    LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General', min_years_of_service=5,
+        annual_entitlement=Decimal('40.00'), sort_order=1,
+    )
+    first = LeavePolicy.objects.create(
+        leave_type=leave_type, designation='Auditor General', min_years_of_service=5,
+        annual_entitlement=Decimal('45.00'), sort_order=0,
+    )
+    assert compute_entitlement(employee_user, leave_type) == Decimal('45.00')
+    assert find_matching_policy(employee_user, leave_type).id == first.id
+
+
+def test_designation_field_in_policy_serializer(as_user, sysadmin_user, leave_type):
+    client = as_user(sysadmin_user)
+    resp = client.post('/api/leave-policies/', {
+        'leave_type': leave_type.id, 'annual_entitlement': '30.00',
+        'designation': 'Auditor General',
+    }, format='json')
+    assert resp.status_code == 201, resp.data
+    assert resp.data['designation'] == 'Auditor General'

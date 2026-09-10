@@ -20,6 +20,7 @@ import type { LeavePolicy } from "@/types";
 const emptyForm = {
   id: null as number | null,
   leave_type: "",
+  designation: "",
   min_years_of_service: "",
   max_years_of_service: "",
   annual_entitlement: "",
@@ -47,6 +48,7 @@ export default function AdminLeavePoliciesPage() {
     setForm({
       id: policy.id,
       leave_type: String(policy.leave_type),
+      designation: policy.designation ?? "",
       min_years_of_service:
         policy.min_years_of_service === null || policy.min_years_of_service === undefined
           ? ""
@@ -82,6 +84,7 @@ export default function AdminLeavePoliciesPage() {
 
     const body = {
       leave_type: Number(form.leave_type),
+      designation: form.designation.trim(),
       min_years_of_service: minYears,
       max_years_of_service: maxYears,
       annual_entitlement: Number(form.annual_entitlement),
@@ -134,6 +137,15 @@ export default function AdminLeavePoliciesPage() {
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <Label htmlFor="designation">Designation</Label>
+            <Input
+              id="designation"
+              placeholder="leave blank to apply to all designations"
+              value={form.designation}
+              onChange={(e) => setForm((f) => ({ ...f, designation: e.target.value }))}
+            />
           </div>
           <div>
             <Label htmlFor="min_years">Min Years of Service</Label>
@@ -216,6 +228,7 @@ export default function AdminLeavePoliciesPage() {
             <thead>
               <tr className="text-left text-gray-500">
                 <th className="py-2 pr-4">Leave Type</th>
+                <th className="py-2 pr-4">Designation</th>
                 <th className="py-2 pr-4">Tenure Band (years)</th>
                 <th className="py-2 pr-4">Entitlement (days)</th>
                 <th className="py-2 pr-4">Order</th>
@@ -227,6 +240,7 @@ export default function AdminLeavePoliciesPage() {
               {sorted.map((p) => (
                 <tr key={p.id}>
                   <td className="py-2 pr-4">{p.leave_type_name ?? leaveTypeName(p.leave_type)}</td>
+                  <td className="py-2 pr-4">{p.designation ? p.designation : "All"}</td>
                   <td className="py-2 pr-4">
                     {p.min_years_of_service ?? "0"}&ndash;{p.max_years_of_service ?? "∞"}
                   </td>

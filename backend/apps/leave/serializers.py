@@ -160,8 +160,9 @@ class LeavePolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = LeavePolicy
         fields = [
-            'id', 'leave_type', 'leave_type_name', 'min_years_of_service',
-            'max_years_of_service', 'annual_entitlement', 'is_active',
+            'id', 'leave_type', 'leave_type_name', 'designation',
+            'min_years_of_service', 'max_years_of_service',
+            'annual_entitlement', 'is_active',
             'sort_order', 'description', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']

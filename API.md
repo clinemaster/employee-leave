@@ -89,23 +89,30 @@ exact same calculation used when an application is created/updated
 everyone else, including HR_ADMIN). Filter: `?leave_type=&is_active=`.
 
 `LeavePolicySerializer` fields: `id, leave_type, leave_type_name,
-min_years_of_service, max_years_of_service, annual_entitlement, is_active,
-sort_order, description, created_at, updated_at`.
+designation, min_years_of_service, max_years_of_service, annual_entitlement,
+is_active, sort_order, description, created_at, updated_at`.
 
 Admin-configurable rules that drive the entitlement engine (spec section 9's
 "leave types are configurable" requirement): each rule maps a `leave_type` +
+optional `designation` (job grade/title, matched case-insensitively/exactly
+against `accounts.User.designation`; blank applies to all designations) +
 optional tenure band (`min_years_of_service`/`max_years_of_service`,
 inclusive; leave both blank for a flat rule that applies regardless of
 tenure) to an `annual_entitlement` in days. For a given employee +
-leave_type, the first active rule (ordered by `sort_order`, ties by `id`)
-whose band contains the employee's years of service — computed from
-`accounts.User.date_of_first_appointment` — is used. An employee with no
-`date_of_first_appointment` only matches flat (un-banded) rules. If nothing
-matches, the system falls back to `LEAVE_DEFAULT_ENTITLEMENT_DAYS`
-(env-configurable, default `28`) — this never errors, even with zero
-policies configured. Implementation: `apps/leave/entitlement.py`.
-`POST`/`PUT`/`PATCH` reject `max_years_of_service < min_years_of_service`
-with `400`.
+leave_type, every active rule whose designation (if set) and tenure band (if
+set) both match is a candidate; the **most specific** candidate wins — one
+matching both designation and tenure band beats one matching only tenure or
+only designation, which beats a flat/all-designations rule. `sort_order`
+(ties by `id`) is only the tiebreaker between equally-specific candidates —
+it is no longer sufficient on its own to determine which rule wins when
+rules of different specificity overlap. Tenure is computed from
+`accounts.User.date_of_first_appointment`; an employee with no
+`date_of_first_appointment` only matches flat (un-banded) rules regardless
+of designation. If nothing matches, the system falls back to
+`LEAVE_DEFAULT_ENTITLEMENT_DAYS` (env-configurable, default `28`) — this
+never errors, even with zero policies configured. Implementation:
+`apps/leave/entitlement.py`. `POST`/`PUT`/`PATCH` reject
+`max_years_of_service < min_years_of_service` with `400`.
 
 ## Leave Balances
 
@@ -328,9 +335,7 @@ action is still logged separately for traceability).
   first creation via the `LeavePolicy` engine (tenure-band or flat rules per
   leave type, admin-managed via `/api/leave-policies/`), with a
   system-default fallback — see "Leave Policies" / "Leave Balances" above.
-  HR/admin may still override afterwards. A UI for managing `LeavePolicy`
-  rows is a frontend follow-up (not built here — admins use
-  `/api/leave-policies/` directly or Django admin for now). Bands are
-  currently keyed only on tenure; role/grade-based entitlement bands are not
-  modeled (the `LeavePolicy` schema could be extended with a `role` field
-  later without breaking existing rows).
+  HR/admin may still override afterwards. `LeavePolicy` now also supports an
+  optional `designation` (job grade/title) match in addition to tenure
+  bands, ranked by specificity — see "Leave Policies" above — and has an
+  admin UI at `frontend/src/app/admin/leave-policies/page.tsx`.

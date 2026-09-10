@@ -202,6 +202,7 @@ export interface LeavePolicy {
   id: number;
   leave_type: number;
   leave_type_name?: string;
+  designation?: string;
   min_years_of_service?: number | null;
   max_years_of_service?: number | null;
   annual_entitlement: number;
