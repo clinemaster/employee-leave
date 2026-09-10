@@ -32,6 +32,9 @@ the email row below and the dedicated subsection after the table.
 | `THROTTLE_RATE_REPORT_EXPORT` | `20/min` | `/api/reports/leave-applications/` throttle. |
 | `THROTTLE_RATE_DOCUMENT_UPLOAD` | `20/min` | `.../upload-document/` throttle. |
 | `FILE_SIZE_LIMIT` | `5242880` (5 MB) | Max upload size in bytes, now actually enforced (`apps/documents/uploads.py`) for the supporting-document upload endpoint, and feeds `DATA_UPLOAD_MAX_MEMORY_SIZE`/`FILE_UPLOAD_MAX_MEMORY_SIZE`. This is the previously-unimplemented spec variable — it now works. |
+| `REDIS_URL` | unset | When set (e.g. `redis://redis-host:6379/1`), `CACHES['default']` uses `django-redis` so rate-limit (throttle) counters are shared across every app instance/worker. When unset, falls back to Django's in-process `LocMemCache` — fine for local dev/a single instance, but see the "Shared cache" note below. |
+| `CLAMAV_ENABLED` | `False` | Turns on virus/malware scanning of uploaded documents (`apps/documents/uploads.py:scan_for_malware`), called after the extension/magic-byte/size checks. When `False` (default), scanning is skipped entirely — safe for environments with no ClamAV daemon. When `True`, an unreachable daemon causes uploads to be rejected (fail-closed), so only enable this once a real `clamd` instance is reachable. |
+| `CLAMAV_HOST` / `CLAMAV_PORT` | `localhost` / `3310` | Where to reach the ClamAV daemon (`clamd`'s default TCP port) when `CLAMAV_ENABLED=True`. |
 | `SECURE_SSL_REDIRECT` / `SESSION_COOKIE_SECURE` / `CSRF_COOKIE_SECURE` | `not DJANGO_DEBUG` | HTTPS/cookie hardening, on automatically once `DJANGO_DEBUG=False`; override only for an intermediate staging box without TLS yet. |
 | `SECURE_HSTS_SECONDS` | `0` in DEBUG, `31536000` (1yr) otherwise | HSTS header duration once behind real TLS. |
 | `EMAIL_HOST` | `` (empty) | SMTP host. When unset/empty, Django's **console** email backend is used instead (emails are printed to stdout) — this is what local dev, CI, and `pytest` run with by default, so no live mail server is required. Set to a real SMTP host (e.g. your mail relay) to switch to real delivery via `django.core.mail.backends.smtp.EmailBackend`. |
@@ -41,11 +44,50 @@ the email row below and the dedicated subsection after the table.
 | `EMAIL_USE_TLS` | `True` | Whether to use STARTTLS when talking to `EMAIL_HOST`. |
 | `DEFAULT_FROM_EMAIL` | `no-reply@naot.go.tz` | `From:` address on outgoing workflow notification emails. |
 
-Rate-limit counters use Django's default cache backend (in-memory
-`LocMemCache` unless you configure `CACHES`) — for more than one app
-process/host, point `CACHES` at a shared backend (Redis/Memcached) or the
-limits won't be shared across workers. Not yet configured — see
-SECURITY.md's "Known gaps".
+**Shared cache for rate limiting (Redis)** — `CACHES['default']` is now
+configurable via `REDIS_URL` (see table above): set it and
+`django-redis` backs the cache; leave it unset and Django's in-process
+`LocMemCache` is used instead. DRF's throttle classes read/write the
+`default` cache alias, so nothing else needs to change — setting
+`REDIS_URL` alone makes rate limiting shared.
+
+**This matters for correctness, not just performance.** `LocMemCache` lives
+in a single process's memory. Run more than one Gunicorn worker, or more
+than one app instance behind a load balancer, and each process keeps its
+*own* independent throttle counters — a client bouncing across N
+workers/instances can effectively get up to N times the configured rate
+limit (e.g. the 5/min login throttle becomes close to 5*N/min in practice).
+For a single-process, single-instance deployment `LocMemCache` is
+technically correct (just not shared with anything, which doesn't matter
+since there's nothing else to share with) but fragile — a restart resets
+all counters, and it doesn't scale if you later add workers. **Any
+deployment running more than one Django process must set `REDIS_URL`** to
+get real, correctly-shared rate limiting. Point it at a Redis instance
+reachable from every app process (a managed Redis service, or a
+self-hosted instance on the same private network) — e.g.
+`REDIS_URL=redis://redis-host:6379/1`. Redis itself needs no special
+NAOT-specific configuration; follow standard Redis deployment practice
+(persistence is not required for this use case since throttle counters are
+inherently ephemeral, but network access should be restricted to the app
+tier).
+
+**Malware scanning (ClamAV)** — see `CLAMAV_ENABLED`/`CLAMAV_HOST`/
+`CLAMAV_PORT` in the table above. Set `CLAMAV_ENABLED=true` in production
+only once a ClamAV daemon (`clamd`) is actually reachable at
+`CLAMAV_HOST:CLAMAV_PORT`, since an unreachable daemon with scanning
+enabled fails closed (rejects all uploads). Running `clamd` itself is
+standard third-party infrastructure, not something this project provides —
+either install the `clamav-daemon` package via your distro's package
+manager (Debian/Ubuntu: `clamav-daemon`, which includes `clamd` and
+`freshclam` for signature updates) and expose it over TCP, or run the
+official `clamav/clamav` Docker image with clamd's `TCPSocket`/`TCPAddr`
+enabled in `clamd.conf` and point `CLAMAV_HOST`/`CLAMAV_PORT` at that
+container. See the [official ClamAV documentation](https://docs.clamav.net/)
+for authoritative install/configuration steps — this project has not
+exercised a live ClamAV setup in this environment (no daemon available
+here), so treat the above as a starting point to validate in a real
+staging environment before relying on it in production. The Python client
+library (`clamd`) is already in `requirements.txt`.
 
 ### Frontend (`frontend/src/lib/api/baseApi.ts`)
 
@@ -121,6 +163,10 @@ EMAIL_USERNAME=leave-notifications@naot.go.tz
 EMAIL_PASSWORD=REDACTED
 EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=leave-notifications@naot.go.tz
+REDIS_URL=redis://redis-host:6379/1
+CLAMAV_ENABLED=True
+CLAMAV_HOST=clamav-host
+CLAMAV_PORT=3310
 ```
 
 `frontend/.env.production` (or set in the hosting platform):

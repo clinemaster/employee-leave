@@ -120,11 +120,26 @@ narrow endpoint:
 - Storage location is unchanged from generated PDFs — local filesystem under
   `MEDIA_ROOT/leave_documents/`, i.e. **not** under any path Django or nginx
   serves publicly (see above).
-- **Not implemented: virus/malware scanning.** Validation here confirms a
-  file is structurally what it claims to be (right extension, right magic
-  bytes, within the size cap) — it does not scan file contents for malware.
-  See "Known gaps" below; this remains explicitly out of scope for this
-  pass.
+- **Virus/malware scanning (ClamAV)** — `apps/documents/uploads.py` now has
+  `scan_for_malware()`, called after the extension/magic-byte/size checks
+  above, before the file is persisted. Gated by `CLAMAV_ENABLED` (env,
+  default `False`): when off, scanning is skipped and a log line notes it —
+  this is safe for dev/CI/most sandboxes where no ClamAV daemon runs. When
+  `CLAMAV_ENABLED=true`, it connects to a ClamAV daemon over TCP
+  (`clamd.ClamdNetworkSocket`, `CLAMAV_HOST`/`CLAMAV_PORT` env vars,
+  defaulting to `localhost:3310`) and streams the file to `instream()`;
+  a result of `FOUND` (infected) rejects the upload with a 400. If scanning
+  is enabled but the daemon is unreachable, the upload is rejected
+  (fail-closed) rather than silently let through — a production deployer who
+  turned scanning on gets a hard error, not a false sense of security.
+  **Honesty note:** this integration is implemented and unit-tested against
+  a mocked `clamd` client (clean result, infected result, and
+  connection-error paths all covered — see
+  `apps/documents/tests/test_uploads.py`), but it has **not** been
+  exercised against a real, running ClamAV daemon in this environment (none
+  is available here). Deployers must stand up an actual `clamd` instance and
+  set `CLAMAV_ENABLED=true` plus `CLAMAV_HOST`/`CLAMAV_PORT` for this to
+  provide real protection in production — see DEPLOYMENT.md.
 
 **Secrets from environment, no silent production fallback** —
 `DJANGO_SECRET_KEY`, `DATABASE_URL` (DB credentials), and the JWT signing
@@ -179,12 +194,6 @@ stronger bar appropriate for a government HR system. Still no MFA (see
 
 ## Known gaps / TODOs for production
 
-- **No virus/malware scanning on uploaded documents.** The new upload
-  validation (extension + magic bytes + size) confirms a file is
-  structurally what it claims to be; it does **not** scan file contents.
-  For production, integrate a scanner (e.g. ClamAV, or a cloud AV API) in
-  the upload path (`apps/documents/uploads.py:validate_upload`) before the
-  file is persisted.
 - **No account lockout** after repeated failed logins beyond the rate
   limit — the login endpoint is now throttled (429 after the configured
   rate), which meaningfully slows brute force, but there is no
@@ -213,12 +222,20 @@ stronger bar appropriate for a government HR system. Still no MFA (see
   instance; a multi-instance deployment needs shared/networked storage or
   S3-compatible object storage with signed URLs (see DEPLOYMENT.md §6),
   which is not implemented.
-- **Rate-limit storage is Django's default cache backend** (in-memory
-  `LocMemCache` unless a real cache is configured) — for a multi-process/
-  multi-host deployment, point `CACHES['default']` at a shared backend
-  (e.g. Redis/Memcached) or throttle counters won't be shared across
-  workers/instances, undermining the limits above. Not yet configured —
-  add this alongside a real `CACHES` setting before scaling out.
+- **Shared cache for multi-instance rate limiting — now implemented,
+  opt-in via env.** `settings.py`'s `CACHES['default']` uses
+  `django_redis.cache.RedisCache` when the `REDIS_URL` env var is set, and
+  falls back to Django's in-memory `LocMemCache` when it's unset (so local
+  dev/CI/pytest never need a live Redis instance). DRF's throttle classes
+  (`AnonRateThrottle`/`UserRateThrottle`/`ScopedRateThrottle`) use the
+  `default` cache alias without any further change, so once `REDIS_URL` is
+  set in production, rate-limit counters are automatically shared across
+  every app instance/worker. **This is still a deployment-time decision,
+  not automatic**: a deployment that never sets `REDIS_URL` still runs on
+  per-process `LocMemCache`, and in a multi-instance/load-balanced setup
+  that means each instance enforces its own independent counters — a client
+  routed across N instances can get up to N times the intended rate limit.
+  See DEPLOYMENT.md for the `REDIS_URL` setup and this tradeoff.
 
 ## Bottom line
 
@@ -228,9 +245,12 @@ the system's strongest area. This pass closed the previously-listed
 infrastructure gaps that were straightforward to close in-code: rate
 limiting, refresh-token blacklisting, HTTPS/cookie hardening settings,
 secret-fallback protection, stronger password policy, a minimal, validated,
-authenticated-only supporting-document upload/download path, and now CI
+authenticated-only supporting-document upload/download path, CI
 dependency/vulnerability scanning (pip-audit, npm audit, GitHub dependency
-review) on every push/PR. What's left (virus scanning, MFA, account lockout,
-a real secrets manager, shared cache for multi-instance throttling,
+review) on every push/PR, a shared Redis cache backend for correct
+multi-instance rate limiting (opt-in via `REDIS_URL`), and ClamAV malware
+scanning on uploads (opt-in via `CLAMAV_ENABLED`, unit-tested against a
+mocked scanner but not yet exercised against a live daemon — see above).
+What's left (MFA, account lockout, a real secrets manager,
 logging/monitoring) is genuinely out of scope for a code-only pass and is
 called out above rather than left implicit.
