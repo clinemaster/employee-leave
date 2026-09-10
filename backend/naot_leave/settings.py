@@ -169,6 +169,8 @@ REST_FRAMEWORK = {
         'pdf_export': config('THROTTLE_RATE_PDF_EXPORT', default='10/min'),
         'report_export': config('THROTTLE_RATE_REPORT_EXPORT', default='20/min'),
         'document_upload': config('THROTTLE_RATE_DOCUMENT_UPLOAD', default='20/min'),
+        # TOTP codes are 6 digits (1e6 combinations) — throttle tightly.
+        'mfa_verify': config('THROTTLE_RATE_MFA_VERIFY', default='5/min'),
     },
 }
 

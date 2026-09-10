@@ -5,7 +5,14 @@ from .models import User
 
 
 class NaotTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Adds basic profile/role claims to the JWT response body (not the token itself)."""
+    """Adds basic profile/role claims to the JWT response body (not the token itself).
+
+    If the authenticating user has MFA enabled, `validate()` is never
+    reached with full token issuance — see `apps.accounts.views.LoginView`,
+    which intercepts MFA-enabled users before calling `super().post()` and
+    returns a challenge response instead. This serializer only ever runs
+    for non-MFA users or the second-step `/mfa/login-verify/` flow.
+    """
 
     def validate(self, attrs):
         data = super().validate(attrs)
@@ -21,8 +28,12 @@ class UserSerializer(serializers.ModelSerializer):
             'check_number', 'personnel_file_number', 'designation',
             'station', 'department', 'section', 'unit', 'manager',
             'phone_number', 'date_of_first_appointment', 'is_active',
+            'mfa_enabled',
         ]
-        read_only_fields = ['id']
+        # mfa_secret is deliberately never listed here — not even write_only —
+        # so it can never be read OR set via the standard user serializers.
+        # It is only ever touched by apps.accounts.mfa_views.
+        read_only_fields = ['id', 'mfa_enabled']
 
 
 class UserWriteSerializer(serializers.ModelSerializer):
@@ -54,3 +65,18 @@ class UserWriteSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+# --- MFA request bodies (apps.accounts.mfa_views) -----------------------
+
+class MfaVerifySetupSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=8, min_length=6)
+
+
+class MfaDisableSerializer(serializers.Serializer):
+    password = serializers.CharField()
+
+
+class MfaLoginVerifySerializer(serializers.Serializer):
+    mfa_token = serializers.CharField()
+    code = serializers.CharField(max_length=8, min_length=6)

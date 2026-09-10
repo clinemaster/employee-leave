@@ -1,4 +1,5 @@
-from rest_framework import viewsets
+from django.contrib.auth import authenticate
+from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,6 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.leave.permissions import IsSystemAdmin
 
+from .mfa_views import _issue_challenge_token
 from .models import User
 from .serializers import NaotTokenObtainPairSerializer, UserSerializer, UserWriteSerializer
 
@@ -17,10 +19,29 @@ class LoginView(TokenObtainPairView):
     Throttled tightly (default 5/min per IP, see THROTTLE_RATE_LOGIN) as
     brute-force / credential-stuffing protection — this is the one endpoint
     every unauthenticated attacker can hit repeatedly.
+
+    MFA (opt-in per user, see apps.accounts.mfa_views): if the user has
+    `mfa_enabled=True`, credentials alone are not enough — this returns a
+    partial challenge response (`{"mfa_required": true, "mfa_token": "..."}`,
+    no JWT pair) instead of calling into the normal token-issuing serializer.
+    The client then calls POST /api/auth/mfa/login-verify/ with that token
+    plus a TOTP code to get the real access/refresh pair.
     """
     serializer_class = NaotTokenObtainPairSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = 'login'
+
+    def post(self, request, *args, **kwargs):
+        username = request.data.get('username')
+        password = request.data.get('password')
+        if username and password:
+            user = authenticate(request, username=username, password=password)
+            if user is not None and getattr(user, 'mfa_enabled', False):
+                return Response({
+                    'mfa_required': True,
+                    'mfa_token': _issue_challenge_token(user),
+                }, status=status.HTTP_200_OK)
+        return super().post(request, *args, **kwargs)
 
 
 class UserViewSet(viewsets.ModelViewSet):
