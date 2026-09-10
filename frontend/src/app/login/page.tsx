@@ -154,21 +154,20 @@ function LoginForm() {
 }
 
 // Shared background for both the credentials and MFA-challenge screens: the
-// NAOT logo rendered as a large, faint, centered watermark behind the card.
+// NAOT logo rendered as a large, faint watermark filling the entire page.
 function LoginBackground({ children }: { children: React.ReactNode }) {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0">
         {/* Plain <img>, not next/image: a static watermark doesn't need
-            responsive srcset/optimization, and this keeps it simple. */}
+            responsive srcset/optimization, and this keeps it simple.
+            object-cover fills the full viewport edge-to-edge (cropping the
+            logo as needed) rather than being boxed to a fixed size. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/naot-logo.png"
           alt=""
-          className="h-[70vmin] w-[70vmin] max-w-none object-contain opacity-10"
+          className="h-full w-full object-cover opacity-10"
         />
       </div>
       <div className="relative z-10">{children}</div>
