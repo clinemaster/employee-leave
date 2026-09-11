@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { useRecommendLeaveApplicationMutation, useReturnLeaveApplicationMutation } from "@/features/leave/leaveApi";
+import { extractErrorMessage } from "@/lib/api/errors";
 import {
   hodRecommendationSchema,
   hodReturnSchema,
@@ -20,6 +22,7 @@ export function HodRecommendationForm({ applicationId }: { applicationId: number
   const router = useRouter();
   const [recommend, { isLoading: isRecommending }] = useRecommendLeaveApplicationMutation();
   const [returnApp, { isLoading: isReturning }] = useReturnLeaveApplicationMutation();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     register,
@@ -42,19 +45,29 @@ export function HodRecommendationForm({ applicationId }: { applicationId: number
   });
 
   async function onSubmit(values: HodRecommendationFormValues) {
-    await recommend({
-      id: applicationId,
-      decision: values.decision,
-      comments: values.comments,
-      signature_name: values.signature_name,
-      signature_designation: values.signature_designation,
-    }).unwrap();
-    router.push("/hod/applications");
+    setActionError(null);
+    try {
+      await recommend({
+        id: applicationId,
+        decision: values.decision,
+        comments: values.comments,
+        signature_name: values.signature_name,
+        signature_designation: values.signature_designation,
+      }).unwrap();
+      router.push("/hod/applications");
+    } catch (err) {
+      setActionError(extractErrorMessage(err, "Failed to submit recommendation. Please try again."));
+    }
   }
 
   async function onReturn(values: HodReturnFormValues) {
-    await returnApp({ id: applicationId, comments: values.comments }).unwrap();
-    router.push("/hod/applications");
+    setActionError(null);
+    try {
+      await returnApp({ id: applicationId, comments: values.comments }).unwrap();
+      router.push("/hod/applications");
+    } catch (err) {
+      setActionError(extractErrorMessage(err, "Failed to return application. Please try again."));
+    }
   }
 
   return (
@@ -62,6 +75,11 @@ export function HodRecommendationForm({ applicationId }: { applicationId: number
       <CardHeader>
         <CardTitle>Section B1 — Recommendation</CardTitle>
       </CardHeader>
+      {actionError ? (
+        <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
+      ) : null}
       <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
         <div>
           <Label htmlFor="decision">Recommendation</Label>

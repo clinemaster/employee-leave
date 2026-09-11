@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { useCreateUserMutation, useGetUsersQuery, useUpdateUserMutation } from "@/features/users/usersApi";
+import { extractErrorMessage } from "@/lib/api/errors";
 import type { Role } from "@/types";
 
 const roles: Role[] = [
@@ -35,21 +36,6 @@ export default function AdminUsersPage() {
   const [password, setPassword] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
-  function extractErrorMessage(error: unknown): string {
-    if (error && typeof error === "object" && "data" in error) {
-      const data = (error as { data?: unknown }).data;
-      if (data && typeof data === "object") {
-        // DRF validation errors: {"field_name": ["message", ...], ...}
-        const parts = Object.entries(data as Record<string, unknown>).map(([field, messages]) => {
-          const text = Array.isArray(messages) ? messages.join(" ") : String(messages);
-          return `${field}: ${text}`;
-        });
-        if (parts.length > 0) return parts.join(" | ");
-      }
-    }
-    return "Failed to create user. Please try again.";
-  }
-
   async function handleCreate() {
     if (!username.trim() || !fullName.trim() || !checkNumber.trim()) return;
     setCreateError(null);
@@ -69,7 +55,7 @@ export default function AdminUsersPage() {
       setPassword("");
       setRole("EMPLOYEE");
     } catch (err) {
-      setCreateError(extractErrorMessage(err));
+      setCreateError(extractErrorMessage(err, "Failed to create user. Please try again."));
     }
   }
 

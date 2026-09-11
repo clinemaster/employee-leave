@@ -106,6 +106,27 @@ describe("HodRecommendationForm", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it("shows a visible error message instead of crashing when the recommend request is rejected (e.g. 403 not routed to this HOD)", async () => {
+    const user = userEvent.setup();
+    global.fetch = jest.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ detail: "This application is not routed to you." }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        })
+      )
+    ) as unknown as typeof fetch;
+    renderForm(5);
+
+    await user.selectOptions(screen.getByLabelText(/Recommendation/), "Recommend");
+    await user.type(screen.getByLabelText("Name"), "Jane Manager");
+    await user.type(screen.getByLabelText("Designation"), "HOD");
+    await user.click(screen.getByRole("button", { name: "Submit Recommendation" }));
+
+    expect(await screen.findByText("This application is not routed to you.")).toBeInTheDocument();
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("calls returnLeaveApplication with comments when returning", async () => {
     const user = userEvent.setup();
     renderForm(9);

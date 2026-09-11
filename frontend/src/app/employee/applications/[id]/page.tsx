@@ -9,16 +9,7 @@ import {
   useGenerateLeavePdfMutation,
   useLazyGetLeaveDocumentsQuery,
 } from "@/features/leave/leaveApi";
-
-function extractErrorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "data" in error) {
-    const data = (error as { data?: unknown }).data;
-    if (data && typeof data === "object" && "detail" in data && typeof (data as { detail?: unknown }).detail === "string") {
-      return (data as { detail: string }).detail;
-    }
-  }
-  return "Something went wrong. Please try again.";
-}
+import { extractErrorMessage } from "@/lib/api/errors";
 
 export default function EmployeeApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { useVerifyLeaveApplicationMutation } from "@/features/leave/leaveApi";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { hrReviewSchema, type HrReviewFormValues } from "@/lib/validation/leaveApplication";
 
 // Section B2 — HR_ADMIN. POST .../verify/ with decision: true/false, comments,
@@ -19,6 +21,7 @@ import { hrReviewSchema, type HrReviewFormValues } from "@/lib/validation/leaveA
 export function HrReviewForm({ applicationId }: { applicationId: number }) {
   const router = useRouter();
   const [verify, { isLoading: isVerifying }] = useVerifyLeaveApplicationMutation();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     register,
@@ -30,14 +33,19 @@ export function HrReviewForm({ applicationId }: { applicationId: number }) {
   });
 
   async function onVerify(values: HrReviewFormValues) {
-    await verify({
-      id: applicationId,
-      decision: values.decision,
-      comments: values.comments,
-      signature_name: values.signature_name,
-      signature_designation: values.signature_designation,
-    }).unwrap();
-    router.push("/hr/applications");
+    setActionError(null);
+    try {
+      await verify({
+        id: applicationId,
+        decision: values.decision,
+        comments: values.comments,
+        signature_name: values.signature_name,
+        signature_designation: values.signature_designation,
+      }).unwrap();
+      router.push("/hr/applications");
+    } catch (err) {
+      setActionError(extractErrorMessage(err, "Failed to submit HR review. Please try again."));
+    }
   }
 
   return (
@@ -45,6 +53,11 @@ export function HrReviewForm({ applicationId }: { applicationId: number }) {
       <CardHeader>
         <CardTitle>Section B2 — HR Review</CardTitle>
       </CardHeader>
+      {actionError ? (
+        <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
+      ) : null}
       <form className="space-y-4" onSubmit={handleSubmit(onVerify)}>
         <div>
           <Label htmlFor="verified">Verification</Label>

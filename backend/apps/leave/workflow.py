@@ -79,6 +79,16 @@ def _check_role_for_action(user, application, action):
     if action in ('submit',):
         if application.employee_id != user.id:
             raise PermissionDenied('Only the applicant may submit this application.')
+        if routed_hod_for(application) is None:
+            # Without a routed HOD, the application would move to
+            # PENDING_HOD_REVIEW with no one able to act on it (recommend/
+            # return both require a routed HOD) — stuck forever with no
+            # visible reason why. Reject at submit time instead, with a
+            # message that tells the applicant/admin what to fix.
+            raise WorkflowError(
+                'You have no assigned Head of Department/Section/Unit to review this '
+                'application. Ask a SYSTEM_ADMIN to set your manager before submitting.'
+            )
     elif action in ('recommend', 'return_to_employee'):
         if not is_hod(user):
             raise PermissionDenied('Only the routed Head of Department/Section/Unit may act here.')

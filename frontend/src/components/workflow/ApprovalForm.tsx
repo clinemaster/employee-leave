@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
@@ -7,6 +8,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { useApproveLeaveApplicationMutation, useDenyLeaveApplicationMutation } from "@/features/leave/leaveApi";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { approvalSchema, denySchema, type ApprovalFormValues, type DenyFormValues } from "@/lib/validation/leaveApplication";
 
 // Section C — AUTHORIZING_OFFICER. POST .../approve/ or .../deny/ with
@@ -18,6 +20,7 @@ export function ApprovalForm({ applicationId }: { applicationId: number }) {
   const router = useRouter();
   const [approve, { isLoading: isApproving }] = useApproveLeaveApplicationMutation();
   const [deny, { isLoading: isDenying }] = useDenyLeaveApplicationMutation();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const {
     register: registerApprove,
@@ -38,23 +41,33 @@ export function ApprovalForm({ applicationId }: { applicationId: number }) {
   });
 
   async function onApprove(values: ApprovalFormValues) {
-    await approve({
-      id: applicationId,
-      comments: values.comments,
-      signature_name: values.signature_name,
-      signature_designation: values.signature_designation,
-    }).unwrap();
-    router.push("/authorization/applications");
+    setActionError(null);
+    try {
+      await approve({
+        id: applicationId,
+        comments: values.comments,
+        signature_name: values.signature_name,
+        signature_designation: values.signature_designation,
+      }).unwrap();
+      router.push("/authorization/applications");
+    } catch (err) {
+      setActionError(extractErrorMessage(err, "Failed to approve application. Please try again."));
+    }
   }
 
   async function onDeny(values: DenyFormValues) {
-    await deny({
-      id: applicationId,
-      comments: values.comments,
-      signature_name: values.signature_name,
-      signature_designation: values.signature_designation,
-    }).unwrap();
-    router.push("/authorization/applications");
+    setActionError(null);
+    try {
+      await deny({
+        id: applicationId,
+        comments: values.comments,
+        signature_name: values.signature_name,
+        signature_designation: values.signature_designation,
+      }).unwrap();
+      router.push("/authorization/applications");
+    } catch (err) {
+      setActionError(extractErrorMessage(err, "Failed to deny application. Please try again."));
+    }
   }
 
   return (
@@ -62,6 +75,11 @@ export function ApprovalForm({ applicationId }: { applicationId: number }) {
       <CardHeader>
         <CardTitle>Section C — Authorization</CardTitle>
       </CardHeader>
+      {actionError ? (
+        <p className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {actionError}
+        </p>
+      ) : null}
       <form className="space-y-4" onSubmit={handleApproveSubmit(onApprove)}>
         <div className="grid grid-cols-2 gap-4">
           <div>

@@ -36,6 +36,28 @@ def test_submit_creates_audit_and_notification(as_user, draft_application, emplo
     assert notifs.filter(user=draft_application.employee.manager).exists()
 
 
+def test_submit_rejected_with_clear_error_when_employee_has_no_manager(as_user, make_user, leave_type):
+    """
+    Regression: submitting with no routed HOD used to succeed and move the
+    application to PENDING_HOD_REVIEW, where it got stuck forever since
+    recommend/return both require a routed HOD (routed_hod_for() -> None
+    means no one, including SYSTEM_ADMIN via the normal role checks, could
+    ever act on it). Now rejected at submit time with a clear message.
+    """
+    orphan = make_user(username='orphan', full_name='No Manager', check_number='ORPH-001')
+    assert orphan.manager is None
+    app = LeaveApplication.objects.create(
+        employee=orphan, leave_type=leave_type, full_name=orphan.full_name,
+        start_date=datetime.date(2026, 1, 5), last_date=datetime.date(2026, 1, 9),
+    )
+    client = as_user(orphan)
+    resp = client.post(_url(app.id, 'submit'))
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST, resp.data
+    assert 'manager' in resp.data['detail'].lower()
+    app.refresh_from_db()
+    assert app.status == S.DRAFT  # unchanged -- rejected before any transition
+
+
 def test_full_happy_path_workflow(as_user, draft_application, employee_user, hod_user, hr_user, ao_user):
     emp_client = as_user(employee_user)
     hod_client = as_user(hod_user)
