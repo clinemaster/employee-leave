@@ -14,6 +14,7 @@ signature or DSMS integration (explicitly out of scope).
 """
 import io
 import os
+from xml.sax.saxutils import escape
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -21,7 +22,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+    Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
@@ -38,6 +39,27 @@ title_style = ParagraphStyle('NaotTitle', parent=styles['Title'], fontSize=13, s
 heading_style = ParagraphStyle('NaotHeading', parent=styles['Heading3'], fontSize=10, spaceBefore=8, spaceAfter=4)
 normal_style = ParagraphStyle('NaotNormal', parent=styles['Normal'], fontSize=9)
 small_style = ParagraphStyle('NaotSmall', parent=styles['Normal'], fontSize=8, textColor=colors.grey)
+# Matches _kv_table's TableStyle FONTSIZE (8.5) — used to wrap cell text (see
+# _cell()) rather than the FONTSIZE command alone, which only affects plain
+# strings and does nothing for wrapping/overflow.
+cell_style = ParagraphStyle('NaotCell', parent=styles['Normal'], fontSize=8.5, leading=10)
+
+
+def _cell(value):
+    """
+    Wrap a table cell value in a Paragraph so ReportLab word-wraps it to fit
+    the column's fixed width (growing the row taller) instead of overflowing
+    past the cell into its neighbor -- the bug this fixes for long HOD/HR/AO
+    comments and multi-dependant lists. Values already a Flowable (e.g. an
+    Image/Table placed directly in a cell) pass through unchanged. Escapes
+    the text first since Paragraph interprets a small XML-like markup subset
+    and free-text user input (comments, names) may contain literal
+    '&', '<', '>'.
+    """
+    if isinstance(value, Flowable):
+        return value
+    text = '' if value is None else str(value)
+    return Paragraph(escape(text), cell_style)
 
 
 LOGO_BOX_CM = 3.0  # max width/height a header logo/emblem is scaled to fit within
@@ -91,7 +113,8 @@ def _header_block():
 
 
 def _kv_table(rows, col_widths=(4.5 * cm, 4.2 * cm, 4.5 * cm, 4.2 * cm)):
-    table = Table(rows, colWidths=list(col_widths))
+    wrapped_rows = [[_cell(value) for value in row] for row in rows]
+    table = Table(wrapped_rows, colWidths=list(col_widths))
     table.setStyle(TableStyle([
         ('FONTSIZE', (0, 0), (-1, -1), 8.5),
         ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
@@ -111,7 +134,13 @@ def _money(value):
 
 
 def _jedwali_table(rows, col_widths=(6.5 * cm, 2.0 * cm, 5.5 * cm, 3.5 * cm)):
-    table = Table(rows, colWidths=list(col_widths))
+    # Header row (rows[0]) is left as plain strings: the TableStyle FONTNAME
+    # bold command below only affects plain-string cells, not Paragraph
+    # flowables, and the header values are short/fixed so wrapping isn't
+    # needed there anyway. Only the data rows (route/passenger names, which
+    # can be long) are wrapped.
+    wrapped_rows = [rows[0]] + [[_cell(value) for value in row] for row in rows[1:]]
+    table = Table(wrapped_rows, colWidths=list(col_widths))
     table.setStyle(TableStyle([
         ('FONTSIZE', (0, 0), (-1, -1), 8.5),
         ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
