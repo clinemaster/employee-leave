@@ -31,6 +31,53 @@ export const leaveRequestSchema = z
 export type LeaveRequestFormValues = z.infer<typeof leaveRequestSchema>;
 export type DependantFormValues = z.infer<typeof dependantSchema>;
 
+// Travel Payment Request ("JEDWALI 1") — NAULI (routes) / TAXI / MIZIGO.
+// Idadi/quantity/number_of_trips are non-negative integers (0 is allowed —
+// e.g. "no travelers of this type on this route"); fare/cost values must be
+// positive; from/to are required non-empty strings whenever a route exists.
+export const travelRoutePassengerSchema = z.object({
+  person_type: z.number(),
+  person_type_name: z.string().optional(),
+  idadi: z.number({ error: "Idadi must be a number" }).int("Idadi must be a whole number").min(0, "Idadi must be 0 or more"),
+});
+
+export const travelRouteSchema = z.object({
+  from_place: z.string().min(1, "From is required"),
+  to_place: z.string().min(1, "To is required"),
+  fare_per_person: z.number({ error: "Fare must be a number" }).positive("Fare must be greater than 0"),
+  trip_type: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  passengers: z.array(travelRoutePassengerSchema),
+});
+
+export const taxiExpenseSchema = z.object({
+  description: z.string().optional(),
+  number_of_trips: z
+    .number({ error: "Number of trips must be a number" })
+    .int("Number of trips must be a whole number")
+    .min(0, "Number of trips must be 0 or more"),
+  cost_per_trip: z.number({ error: "Cost per trip must be a number" }).positive("Cost per trip must be greater than 0"),
+});
+
+export const mizigoItemSchema = z.object({
+  description: z.string().min(1, "Description is required"),
+  quantity: z
+    .number({ error: "Quantity must be a number" })
+    .int("Quantity must be a whole number")
+    .min(0, "Quantity must be 0 or more"),
+  unit_cost: z.number({ error: "Unit cost must be a number" }).positive("Unit cost must be greater than 0"),
+});
+
+export const travelPaymentSchema = z.object({
+  travel_routes: z.array(travelRouteSchema),
+  taxi_expenses: z.array(taxiExpenseSchema),
+  mizigo_items: z.array(mizigoItemSchema),
+});
+
+export type TravelRouteFormValues = z.infer<typeof travelRouteSchema>;
+export type TaxiExpenseFormValues = z.infer<typeof taxiExpenseSchema>;
+export type MizigoItemFormValues = z.infer<typeof mizigoItemSchema>;
+export type TravelPaymentFormValues = z.infer<typeof travelPaymentSchema>;
+
 // Section B1 — HOD/HOS/HOU recommendation.
 export const hodRecommendationSchema = z
   .object({

@@ -74,6 +74,7 @@ export const baseApi = createApi({
     "LeaveTypes",
     "Holidays",
     "LeavePolicies",
+    "PersonTypes",
     "Notifications",
     "AuditTrail",
     "Documents",

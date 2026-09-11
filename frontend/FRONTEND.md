@@ -44,6 +44,72 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 `npm run build` and `npm run lint` both pass cleanly as of this writing (two benign React Compiler
 warnings about `react-hook-form`'s `watch()` not being memoizable — expected, not an error).
 
+## Phase 4 additions (this round) — Travel Payment Request
+
+Built against the backend's Person types & travel payment request additions to `/API.md`
+(`PersonType` catalog + `/api/person-types/` CRUD/reorder, and `travel_routes`/`taxi_expenses`/
+`mizigo_items` nested on `LeaveApplication`).
+
+- **New Step 4 in the leave application form**: `LeaveApplicationForm.tsx` gained "Travel Payment
+  Request" (JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO) as a fifth wizard step, **always shown**
+  (not gated on the `travel_assistance` checkbox) — Personal Info → Leave Request → Dependants →
+  **Travel Payment Request** → Review & Submit. The step's UI lives in
+  `components/leave/TravelPaymentStep.tsx` (NAULI/routes with a per-route Wahusika/person-type
+  table, TAXI, MIZIGO, each with `useFieldArray` add/remove, plus a live sticky summary tile row),
+  embedded directly in the parent form's single `react-hook-form` instance (not a separate form) —
+  same step-validation/Next/Back/Save Draft pattern as the existing steps. Person types (Wahusika)
+  are fetched from `personTypesApi.getPersonTypes` (active, sorted by `sort_order`), not hardcoded,
+  so admin-added types show up automatically; adding a route seeds one passenger row per active
+  person type, defaulting `idadi` to 0 (0 is valid — "no travelers of this type on this route").
+  All totals (`fare × idadi × trips`, taxi `trips × cost`, luggage `qty × unit_cost`, and the NAULI/
+  TAXI/MIZIGO/JUMLA KUU summary) are computed client-side live in `utils/travelPayment.ts` and
+  rendered read-only — the user only ever types Idadi/fare/cost/quantity, never a total.
+- **`<TravelPaymentPreview>`** (`components/leave/TravelPaymentPreview.tsx`): reusable read-only
+  rendering of JEDWALI 1's WAHUSIKA | IDADI | MCHANGANUO | JUMLA table layout (MCHANGANUO text like
+  "85,000 × 4×2" via `mchanganuoText()`), used inside the Review & Submit step and intended for
+  reuse on a future application detail page. Prefers a saved row's server-computed `total`/
+  `naule_total` when present, falling back to the client calculation otherwise.
+- **Types/validation**: `types/index.ts` gained `PersonType`, `TravelRoute`, `TravelRoutePassenger`,
+  `TaxiExpense`, `MizigoItem`, and `LeaveApplication` gained `travel_routes`/`taxi_expenses`/
+  `mizigo_items` plus the four read-only grand-total fields (`naule_grand_total`,
+  `taxi_grand_total`, `mizigo_grand_total`, `travel_payment_grand_total`) — field names reconciled
+  against `/API.md`'s "Person types & travel payment request" section (`from_place`/`to_place`, not
+  `from_location`/`to_location`; each line-item type carries an optional `sort_order`). New zod
+  schemas in `lib/validation/leaveApplication.ts` (`travelRouteSchema`, `taxiExpenseSchema`,
+  `mizigoItemSchema`, `travelPaymentSchema`) validate idadi/quantity/number_of_trips as non-negative
+  integers, fare/cost values as positive numbers, and from/to as required non-empty strings.
+- **`features/leave/personTypesApi.ts`**: `getPersonTypes`, `createPersonType`, `updatePersonType`,
+  `deactivatePersonType`, `reorderPersonTypes` against `/api/person-types/` — copies
+  `catalogApi.ts`'s leave-types pattern field-for-field, including the bulk reorder endpoint. New
+  `PersonTypes` tag added to `baseApi`.
+- **`/admin/person-types`**: list + create + up/down bulk reorder, copying `/admin/leave-types`'s
+  structure exactly. Nav link added to `AppShell`'s SYSTEM_ADMIN section, next to Leave Policies.
+- Tests: `LeaveApplicationForm.test.tsx` gained coverage for the new step's presence in the wizard,
+  the worked-example arithmetic (fare 85,000 × idadi 4 × round-trip = 680,000; fare 40,000 × idadi 2
+  × round-trip = 160,000; taxi 2 × 100,000 = 200,000, all computed live as inputs change), and
+  add/remove for routes and taxi expenses. `lib/validation/leaveApplication.test.ts` (new file)
+  covers the travel-payment zod schemas rejecting missing from/to, non-positive fares, and
+  negative/fractional/non-numeric idadi. `features/leave/personTypesApi.test.ts` and
+  `app/admin/person-types/page.test.tsx` mirror `policiesApi.test.ts` / `admin/leave-policies`'s
+  test harnesses (list/create/reorder request shape + tag invalidation, rendered list/empty-state/
+  create-form/reorder assertions).
+
+### Deferred from this round
+
+- Decimal fields (`fare_per_person`, `cost_per_trip`, `unit_cost`) are typed as `number` in the
+  frontend for simplicity even though DRF's `DecimalField` serializes them as strings on the wire
+  (e.g. `"85000.00"`) — RTK Query/fetch will pass the JSON through either way and the browser's
+  `<input type="number">` + `valueAsNumber` coerces on both ends, but a strict string-vs-number
+  mismatch hasn't been exercised against a live backend response.
+- No detail-page rendering of a saved application's travel payment breakdown yet — `
+  <TravelPaymentPreview>` was built reusable for this, but no application detail page wires it in
+  this round (out of scope, per the task's focus on the application form + admin CRUD).
+- The Travel Payment Request step's Idadi inputs (and taxi/mizigo description/trips/cost inputs
+  registered inline without individual `id`/`htmlFor` on every field previously in this codebase)
+  now have `id`/`htmlFor` pairs for accessibility/testability — a small improvement over the
+  Dependants step's inputs, which remain unassociated (matches that step's existing pattern; not
+  touched this round).
+
 ## Phase 3 additions (this round)
 
 - **Leave Policies admin UI**: `/admin/leave-policies` (SYSTEM_ADMIN only) — list of `LeavePolicy`
@@ -92,8 +158,9 @@ warnings about `react-hook-form`'s `watch()` not being memoizable — expected, 
 
 ## Test coverage
 
-`npm test` — 80 passing tests across 18 suites (up from the previous round's 70/16; the 10 new
-tests are this round's leave-policies API slice + admin page, see "Phase 3 additions" above).
+`npm test` — 121 passing tests across 23 suites (up from phase 3's 80/18; the 41 new tests are this
+round's Travel Payment Request step, `personTypesApi`, `/admin/person-types`, and the new
+`lib/validation/leaveApplication.test.ts`, see "Phase 4 additions" above).
 Carried over from the previous round:
 
 - **Workflow forms** (`components/workflow/HodRecommendationForm.test.tsx`,

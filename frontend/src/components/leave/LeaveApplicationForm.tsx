@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
+import type { Control, UseFormRegister, UseFormWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +18,14 @@ import {
   usePreviewWorkingDaysMutation,
 } from "@/features/leave/leaveApi";
 import { previewWeekdayCount } from "@/utils/workingDays";
+import { TravelPaymentStep } from "@/components/leave/TravelPaymentStep";
+import { TravelPaymentPreview } from "@/components/leave/TravelPaymentPreview";
+import {
+  travelRouteSchema,
+  taxiExpenseSchema,
+  mizigoItemSchema,
+} from "@/lib/validation/leaveApplication";
+import type { TravelPaymentFormValues } from "@/lib/validation/leaveApplication";
 
 // Section A fields, per /API.md. `vote_code`/`sub_vote`/`check_number`/
 // `personnel_file`/`full_name`/`designation`/`station`/`division_department`
@@ -45,6 +54,9 @@ const formSchema = z
     phone_number: z.string().optional(),
     email: z.string().optional(),
     dependants: z.array(dependantSchema),
+    travel_routes: z.array(travelRouteSchema),
+    taxi_expenses: z.array(taxiExpenseSchema),
+    mizigo_items: z.array(mizigoItemSchema),
   })
   .refine((data) => new Date(data.last_date) >= new Date(data.start_date), {
     message: "End date must be on or after start date",
@@ -53,7 +65,13 @@ const formSchema = z
 
 type FormValues = z.infer<typeof formSchema>;
 
-const STEPS = ["Personal Info", "Leave Request", "Dependants", "Review & Submit"] as const;
+const STEPS = [
+  "Personal Info",
+  "Leave Request",
+  "Dependants",
+  "Travel Payment Request",
+  "Review & Submit",
+] as const;
 
 export function LeaveApplicationForm() {
   const router = useRouter();
@@ -84,6 +102,9 @@ export function LeaveApplicationForm() {
       phone_number: user?.phone_number ?? "",
       email: user?.email ?? "",
       dependants: [],
+      travel_routes: [],
+      taxi_expenses: [],
+      mizigo_items: [],
     },
   });
 
@@ -93,7 +114,13 @@ export function LeaveApplicationForm() {
   const clientPreviewDays = useMemo(() => previewWeekdayCount(startDate, lastDate), [startDate, lastDate]);
 
   async function goNext() {
-    const fieldsPerStep: (keyof FormValues)[][] = [[], ["leave_type", "start_date", "last_date"], [], []];
+    const fieldsPerStep: (keyof FormValues)[][] = [
+      [],
+      ["leave_type", "start_date", "last_date"],
+      [],
+      ["travel_routes", "taxi_expenses", "mizigo_items"],
+      [],
+    ];
     const valid = await trigger(fieldsPerStep[step]);
     if (valid) {
       if (step === 1 && startDate && lastDate) {
@@ -126,6 +153,9 @@ export function LeaveApplicationForm() {
       start_date: values.start_date,
       last_date: values.last_date,
       dependants: values.dependants,
+      travel_routes: values.travel_routes,
+      taxi_expenses: values.taxi_expenses,
+      mizigo_items: values.mizigo_items,
     };
   }
 
@@ -283,6 +313,14 @@ export function LeaveApplicationForm() {
         )}
 
         {step === 3 && (
+          <TravelPaymentStep
+            control={control as unknown as Control<TravelPaymentFormValues>}
+            register={register as unknown as UseFormRegister<TravelPaymentFormValues>}
+            watch={watch as unknown as UseFormWatch<TravelPaymentFormValues>}
+          />
+        )}
+
+        {step === 4 && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Review &amp; Submit</h2>
             <ReviewRow
@@ -292,6 +330,14 @@ export function LeaveApplicationForm() {
             <ReviewRow label="Dates" value={`${startDate} to ${lastDate} (${clientPreviewDays} working days, preview)`} />
             <ReviewRow label="Travel Assistance" value={watch("travel_assistance") ? "Requested" : "Not requested"} />
             <ReviewRow label="Dependants" value={String(fields.length)} />
+            <div>
+              <p className="mb-2 text-sm font-semibold text-gray-900">Travel Payment Request</p>
+              <TravelPaymentPreview
+                routes={watch("travel_routes")}
+                taxi={watch("taxi_expenses")}
+                mizigo={watch("mizigo_items")}
+              />
+            </div>
             {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}
           </div>
         )}

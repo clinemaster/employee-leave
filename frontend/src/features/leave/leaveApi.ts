@@ -4,7 +4,10 @@ import type {
   LeaveApplication,
   LeaveDependant,
   LeaveDocument,
+  MizigoItem,
   PaginatedResponse,
+  TaxiExpense,
+  TravelRoute,
 } from "@/types";
 
 // Matches /API.md "Leave Applications" section verbatim. Row-level access
@@ -52,6 +55,11 @@ export interface SectionAFields {
   start_date: string;
   last_date: string;
   dependants?: LeaveDependant[];
+  // Travel Payment Request ("JEDWALI 1") — always shown as Step 4 of the
+  // application form, not conditional on `travel_assistance`.
+  travel_routes?: TravelRoute[];
+  taxi_expenses?: TaxiExpense[];
+  mizigo_items?: MizigoItem[];
 }
 
 type UpdateLeaveApplicationRequest = Partial<SectionAFields> & { id: number };

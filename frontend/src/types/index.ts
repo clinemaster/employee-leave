@@ -129,6 +129,14 @@ export interface LeaveApplication {
   start_date: string;
   last_date: string;
   dependants: LeaveDependant[];
+  travel_routes: TravelRoute[];
+  taxi_expenses: TaxiExpense[];
+  mizigo_items: MizigoItem[];
+  // Read-only, recomputed live on every GET — never stored (see /API.md).
+  naule_grand_total?: number;
+  taxi_grand_total?: number;
+  mizigo_grand_total?: number;
+  travel_payment_grand_total?: number;
   status: LeaveStatus;
   recommendation?: LeaveRecommendation | null;
   hr_review?: HRReview | null;
@@ -193,6 +201,66 @@ export interface LeaveBalance {
   // from that value (entitlement != computed_entitlement).
   computed_entitlement?: number;
   is_entitlement_overridden?: boolean;
+}
+
+// Travel Payment Request ("JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO") — NAULI
+// (routes), TAXI, and MIZIGO (luggage) line items, added to Section A of the
+// leave application. Person types (Wahusika) are admin-configurable via
+// /api/person-types/, not hardcoded. Field names are the shapes agreed with
+// BACKEND before their API.md update landed — reconcile if it differs.
+export interface PersonType {
+  id: number;
+  name: string;
+  code?: string;
+  is_active: boolean;
+  sort_order: number;
+}
+
+export type TripType = "ONE_WAY" | "ROUND_TRIP";
+
+export interface TravelRoutePassenger {
+  id?: number;
+  person_type: number;
+  person_type_name?: string;
+  idadi: number;
+  // Read-only, server-computed once available (mirrors fare/trips/total
+  // client-side in the meantime so the preview never drifts once saved).
+  fare?: number;
+  trips?: number;
+  total?: number;
+}
+
+export interface TravelRoute {
+  id?: number;
+  from_place: string;
+  to_place: string;
+  fare_per_person: number;
+  trip_type: TripType;
+  sort_order?: number;
+  passengers: TravelRoutePassenger[];
+  // Read-only, server-computed on GET (see /API.md "Travel payment request
+  // fields"): `trips` (1/2 from trip_type), `naule_total` (sum of this
+  // route's passenger totals).
+  trips?: number;
+  naule_total?: number;
+}
+
+export interface TaxiExpense {
+  id?: number;
+  description?: string;
+  number_of_trips: number;
+  cost_per_trip: number;
+  sort_order?: number;
+  total?: number;
+}
+
+export interface MizigoItem {
+  id?: number;
+  description: string;
+  quantity: number;
+  unit_cost: number;
+  sort_order?: number;
+  total?: number;
 }
 
 // Admin-configurable annual entitlement rules (SYSTEM_ADMIN only), per
