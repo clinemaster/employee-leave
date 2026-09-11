@@ -4,12 +4,20 @@ import { use } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { SectionA, SectionB1ReadOnly, SectionB2ReadOnly } from "@/components/leave/SectionReadOnly";
 import { ApprovalForm } from "@/components/workflow/ApprovalForm";
+import { TravelPaymentPreview } from "@/components/leave/TravelPaymentPreview";
+import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
 import { useGetLeaveApplicationQuery } from "@/features/leave/leaveApi";
 
 export default function AuthorizationApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const applicationId = Number(id);
   const { data: application, isLoading } = useGetLeaveApplicationQuery(applicationId);
+
+  const hasTravelPaymentData =
+    !!application &&
+    (application.travel_routes.length > 0 ||
+      application.taxi_expenses.length > 0 ||
+      application.mizigo_items.length > 0);
 
   return (
     <AppShell>
@@ -21,6 +29,18 @@ export default function AuthorizationApplicationDetailPage({ params }: { params:
           <SectionA application={application} />
           <SectionB1ReadOnly application={application} />
           <SectionB2ReadOnly application={application} />
+          {hasTravelPaymentData ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Travel Payment Request — JEDWALI 1</CardTitle>
+              </CardHeader>
+              <TravelPaymentPreview
+                routes={application.travel_routes}
+                taxi={application.taxi_expenses}
+                mizigo={application.mizigo_items}
+              />
+            </Card>
+          ) : null}
           <ApprovalForm applicationId={applicationId} />
         </div>
       )}

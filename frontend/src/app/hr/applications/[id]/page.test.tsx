@@ -23,7 +23,7 @@ const mockUser: User = {
   is_active: true,
 };
 
-function sampleApplication(): LeaveApplication {
+function sampleApplication(overrides: Partial<LeaveApplication> = {}): LeaveApplication {
   return {
     id: 1,
     employee: 5,
@@ -44,6 +44,7 @@ function sampleApplication(): LeaveApplication {
     recommendation: { recommended: true, comments: "OK", signature_name: "Boss", signature_designation: "HOD" },
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
   };
 }
 
@@ -64,10 +65,10 @@ function resolvedParams(id: string) {
   return promise;
 }
 
-function renderPage() {
+function renderPage(application: LeaveApplication = sampleApplication()) {
   global.fetch = jest.fn().mockImplementation((input: Request | string) => {
     const url = typeof input === "string" ? input : input.url;
-    if (url.includes("leave-applications/1/")) return Promise.resolve(jsonResponse(sampleApplication()));
+    if (url.includes("leave-applications/1/")) return Promise.resolve(jsonResponse(application));
     if (url.includes("notifications/")) return Promise.resolve(jsonResponse([]));
     if (url.includes("leave-balances/")) return Promise.resolve(jsonResponse([]));
     if (url.includes("leave-types/")) return Promise.resolve(jsonResponse([]));
@@ -103,5 +104,36 @@ describe("HrApplicationDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Submit Recommendation" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Deny" })).not.toBeInTheDocument();
+  });
+
+  it("does not show a Travel Payment Request section when the application has no travel data", async () => {
+    renderPage(sampleApplication());
+    await screen.findByText("Section A — Applicant Details");
+    expect(screen.queryByText("Travel Payment Request — JEDWALI 1")).not.toBeInTheDocument();
+  });
+
+  it("shows the Travel Payment Request breakdown (JEDWALI 1) so HR can see the requested amount before verifying", async () => {
+    renderPage(
+      sampleApplication({
+        travel_assistance: true,
+        travel_routes: [
+          {
+            id: 1,
+            from_place: "Dodoma",
+            to_place: "Musoma Mjini",
+            fare_per_person: 85000,
+            trip_type: "ROUND_TRIP",
+            sort_order: 0,
+            passengers: [{ id: 1, person_type: 1, person_type_name: "Mimi", idadi: 1, total: 170000 }],
+          },
+        ],
+        taxi_expenses: [{ id: 1, description: "", number_of_trips: 2, cost_per_trip: 100000, sort_order: 0, total: 200000 }],
+        mizigo_items: [],
+      })
+    );
+
+    expect(await screen.findByText("Travel Payment Request — JEDWALI 1")).toBeInTheDocument();
+    expect(screen.getByText("JUMLA KUU")).toBeInTheDocument();
+    expect(screen.getByText("370,000")).toBeInTheDocument(); // 170,000 NAULI + 200,000 TAXI
   });
 });
