@@ -90,6 +90,90 @@ values, a duplicate `id` within the request, or an `id` that doesn't match
 an existing (non-deleted) `LeaveType`. `403` for any role other than
 SYSTEM_ADMIN.
 
+## Person types & travel payment request (read: any; write: SYSTEM_ADMIN)
+
+`PersonType` is an admin-configurable catalog of traveler categories
+(Wahusika) used on the "JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO" travel
+payment breakdown — same shape and CRUD/reorder pattern as `LeaveType`.
+
+- `GET|POST /api/person-types/`, `.../{id}/` — `{id, name, code, is_active, sort_order}`
+
+Seeded via a data migration with exactly four rows (SYSTEM_ADMIN may add
+more): `Mimi` (`SELF`), `Mke` (`SPOUSE`), `Wategemezi` (`DEPENDANTS`),
+`Msaidizi wa Ndani` (`HOUSE_HELP`), `sort_order` 1-4.
+
+### POST /api/person-types/reorder/
+SYSTEM_ADMIN only. Identical shape/behavior to `POST
+/api/leave-types/reorder/` above (atomic bulk `sort_order` update, `400` on
+empty/malformed/duplicate/unknown-id entries, `403` for non-admins).
+
+### Travel payment request fields on LeaveApplication (Section A)
+
+Instead of a single Travel Assistance amount, the employee builds a
+per-route fare/taxi/luggage breakdown, nested under the leave application —
+part of Section A, gated by the same `assert_can_edit_fields` RBAC rule as
+`dependants` (employee-editable only while `DRAFT`/`RETURNED_TO_EMPLOYEE`).
+
+**`travel_routes`** (NAULI, JEDWALI 1-A) — array of:
+```json
+{
+  "id": 1,
+  "from_place": "Dodoma",
+  "to_place": "Musoma Mjini",
+  "fare_per_person": "85000.00",
+  "trip_type": "ONE_WAY | ROUND_TRIP",
+  "sort_order": 0,
+  "trips": 2,
+  "naule_total": "1190000.00",
+  "passengers": [
+    {
+      "id": 1,
+      "person_type": 1,
+      "person_type_name": "Mimi",
+      "idadi": 1,
+      "total": "170000.00"
+    }
+  ]
+}
+```
+`trips` (1 for `ONE_WAY`, 2 for `ROUND_TRIP`), `naule_total` (sum of this
+route's passenger totals), and each passenger's `total` (`fare_per_person *
+idadi * trips`) are read-only, server-computed — never stored, never
+trusted from the client. `person_type_name` is likewise read-only.
+
+**`taxi_expenses`** (TAXI, JEDWALI 1-B) — array of:
+```json
+{
+  "id": 1, "description": "Airport transfer", "number_of_trips": 2,
+  "cost_per_trip": "100000.00", "sort_order": 0, "total": "200000.00"
+}
+```
+`total = number_of_trips * cost_per_trip` (read-only).
+
+**`mizigo_items`** (MIZIGO, JEDWALI 1-C) — array of:
+```json
+{
+  "id": 1, "description": "Extra luggage", "quantity": 1,
+  "unit_cost": "100000.00", "sort_order": 0, "total": "100000.00"
+}
+```
+`total = quantity * unit_cost` (read-only).
+
+All three are **fully replaced on every write** (delete-all-and-recreate),
+the same pattern `dependants` already uses — send the complete desired list
+on `PATCH`/`PUT`, not a diff. `travel_routes` nests `passengers` two levels
+deep; both levels are replaced together when `travel_routes` is present in
+the request body.
+
+On `GET` (full read), the application additionally exposes:
+- `naule_grand_total` — sum of all `travel_routes[].naule_total`
+- `taxi_grand_total` — sum of all `taxi_expenses[].total`
+- `mizigo_grand_total` — sum of all `mizigo_items[].total`
+- `travel_payment_grand_total` (JUMLA KUU) — sum of the three above
+
+These four are read-only and recomputed live on every read — never stored,
+never drift from the underlying rows.
+
 ## Working-days preview
 
 ### POST /api/working-days-preview/
@@ -208,7 +292,9 @@ sends:
 Section A fields: `vote_code, sub_vote, check_number, personnel_file,
 full_name, designation, station, division_department, phone_number, email,
 contact_address, leave_type, leave_number, travel_assistance, start_date,
-last_date, dependants`.
+last_date, dependants, travel_routes, taxi_expenses, mizigo_items`. See
+"Person types & travel payment request" above for the shape of the last
+three.
 
 Sending a field outside your authorized section returns
 `403 {"detail": "You may only edit Section A fields. Disallowed: [...]"}`
@@ -224,7 +310,7 @@ Sending a field outside your authorized section returns
 | `.../verify/` | PENDING_HR_REVIEW | HR_ADMIN | writes Section B2 (`hr_review`), -> HR_VERIFIED -> (auto) PENDING_AUTHORIZATION |
 | `.../approve/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=true), -> APPROVED |
 | `.../deny/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=false), -> DENIED |
-| `.../generate-pdf/` | APPROVED | applicant, HR_ADMIN, AUTHORIZING_OFFICER | renders 2-page PDF, stores `LeaveDocument`, -> PDF_GENERATED |
+| `.../generate-pdf/` | APPROVED | applicant, HR_ADMIN, AUTHORIZING_OFFICER | renders 2- or 3-page PDF (3rd page only if travel payment data exists), stores `LeaveDocument`, -> PDF_GENERATED |
 | `.../resubmit-to-hr/` | RETURNED_TO_HOD | routed HOD/HOS/HOU | HOD resubmits after correcting Section B1, -> PENDING_HR_REVIEW |
 | `.../complete/` | PDF_GENERATED | HR_ADMIN, AUTHORIZING_OFFICER | -> COMPLETED (terminal, successful) |
 | `.../archive/` | DENIED, COMPLETED | HR_ADMIN | -> ARCHIVED (terminal, housekeeping) |

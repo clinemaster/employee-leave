@@ -21,7 +21,7 @@ at `postgres://naot_leave:naot_leave@localhost:5432/naot_leave`.
 |---|---|
 | `apps.accounts` | Custom `User` model (roles, employee master data) |
 | `apps.organization` | `Department`, `Section`, `Unit`, `Station` |
-| `apps.leave` | `LeaveType`, `Holiday`, `LeaveApplication` (+ B1/B2/C sub-records), `LeaveDependant`, `LeaveBalance` |
+| `apps.leave` | `LeaveType`, `Holiday`, `LeaveApplication` (+ B1/B2/C sub-records), `LeaveDependant`, `LeaveBalance`, `PersonType`, `TravelRoute`/`TravelRoutePassenger`/`TaxiExpense`/`MizigoItem` (travel payment breakdown) |
 | `apps.documents` | `DocumentTemplate`, `LeaveDocument`, `DocumentVersion` (models only — PDF rendering is the backend agent's job) |
 | `apps.notifications` | `Notification` |
 | `apps.audit` | `AuditLog` (immutable — no `updated_at`, admin blocks change/delete) |
@@ -92,6 +92,46 @@ placeholders (`signature_name`, `signature_designation`, `signature_date`) —
 no digital signature/DSMS fields, matching the paper form.
 
 **LeaveDependant**: `application` FK, `name`, `relationship`, `date_of_birth`.
+
+**Travel payment request** ("JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO" —
+Section A's travel-cost breakdown, replacing a single Travel Assistance
+amount with a per-route fare/taxi/luggage breakdown):
+
+- **PersonType**: admin-configurable catalog of traveler categories
+  (Wahusika) — `name`, `code` (unique), `is_active`, `sort_order`,
+  `deleted_at`. Same shape as `LeaveType`; seeded via a data migration with
+  four rows: `Mimi`/`SELF`, `Mke`/`SPOUSE`, `Wategemezi`/`DEPENDANTS`,
+  `Msaidizi wa Ndani`/`HOUSE_HELP` (sort_order 1-4). SYSTEM_ADMIN may add
+  more via `/api/person-types/` (CRUD + `/reorder/`, mirroring
+  `LeaveTypeViewSet`).
+- **TravelRoute** (NAULI, one fare row): `application` FK ->
+  LeaveApplication (`related_name='travel_routes'`), `from_place`,
+  `to_place` (CharField), `fare_per_person` (decimal, max_digits=12,
+  decimal_places=2), `trip_type` (`ONE_WAY`/`ROUND_TRIP`), `sort_order`.
+  `trips` is a computed property (1 for `ONE_WAY`, 2 for `ROUND_TRIP`) —
+  never stored, to avoid drift from `trip_type`. `naule_total` is a computed
+  property summing this route's passengers' totals.
+- **TravelRoutePassenger** (one Wahusika/Idadi row within a route):
+  `route` FK -> TravelRoute (`related_name='passengers'`), `person_type`
+  FK -> PersonType, `idadi` (PositiveIntegerField, the count of that person
+  type on this route). `total` is a computed property: `route.fare_per_person
+  * idadi * route.trips` (Decimal arithmetic).
+- **TaxiExpense** (TAXI, JEDWALI 1-B): `application` FK
+  (`related_name='taxi_expenses'`), `description` (blank, optional label),
+  `number_of_trips`, `cost_per_trip` (decimal), `sort_order`. `total`
+  computed property: `number_of_trips * cost_per_trip`.
+- **MizigoItem** (MIZIGO, JEDWALI 1-C): `application` FK
+  (`related_name='mizigo_items'`), `description`, `quantity` (default 1),
+  `unit_cost` (decimal), `sort_order`. `total` computed property:
+  `quantity * unit_cost`.
+
+`LeaveApplication` exposes four computed properties (never stored, always
+summed live from the nested rows): `naule_grand_total` (sum of all
+`travel_routes[].naule_total`), `taxi_grand_total` (sum of all
+`taxi_expenses[].total`), `mizigo_grand_total` (sum of all
+`mizigo_items[].total`), and `travel_payment_grand_total` (JUMLA KUU — sum
+of the three above). See `API.md` "Person types & travel payment request"
+for the JSON shape and the nested-write (delete-and-recreate) semantics.
 
 **LeaveBalance**: `employee` FK, `leave_type` FK, `period` (e.g. `"2026"`),
 `opening_balance`, `entitlement`, `taken`, `pending`, `remaining` (all
