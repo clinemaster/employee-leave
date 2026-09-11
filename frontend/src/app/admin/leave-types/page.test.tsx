@@ -126,6 +126,22 @@ describe("AdminLeaveTypesPage", () => {
     expect(calls.some((c) => c.method === "PATCH")).toBe(false);
   });
 
+  it("shows an Activate button (not Deactivate) for an inactive leave type, and PATCHes is_active: true", async () => {
+    const user = userEvent.setup();
+    const { calls } = renderPage([sampleLeaveType({ id: 2, name: "Sabbatical Leave", code: "SAB", is_active: false })]);
+    await screen.findByText("Sabbatical Leave");
+
+    expect(screen.getByText("Inactive")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deactivate" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+
+    await waitFor(() => {
+      const patchCall = calls.find((c) => c.method === "PATCH" && c.url.includes("leave-types/2/"));
+      expect(patchCall).toBeDefined();
+      expect(patchCall?.body).toMatchObject({ is_active: true });
+    });
+  });
+
   it("shows a visible error instead of crashing when the save is rejected", async () => {
     const user = userEvent.setup();
     global.fetch = jest.fn().mockImplementation(async (input: Request | string) => {

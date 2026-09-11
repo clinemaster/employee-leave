@@ -11,6 +11,7 @@ import {
   useCreateLeaveTypeMutation,
   useUpdateLeaveTypeMutation,
   useDeactivateLeaveTypeMutation,
+  useActivateLeaveTypeMutation,
   useReorderLeaveTypesMutation,
 } from "@/features/leave/catalogApi";
 import type { LeaveType } from "@/types";
@@ -20,6 +21,7 @@ export default function AdminLeaveTypesPage() {
   const [createLeaveType, { isLoading: isCreating }] = useCreateLeaveTypeMutation();
   const [updateLeaveType, { isLoading: isSaving }] = useUpdateLeaveTypeMutation();
   const [deactivateLeaveType] = useDeactivateLeaveTypeMutation();
+  const [activateLeaveType] = useActivateLeaveTypeMutation();
   const [reorderLeaveTypes] = useReorderLeaveTypesMutation();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
@@ -194,7 +196,11 @@ export default function AdminLeaveTypesPage() {
                             <Button variant="danger" onClick={() => deactivateLeaveType({ id: lt.id })}>
                               Deactivate
                             </Button>
-                          ) : null}
+                          ) : (
+                            <Button variant="secondary" onClick={() => activateLeaveType({ id: lt.id })}>
+                              Activate
+                            </Button>
+                          )}
                         </td>
                       </>
                     )}
