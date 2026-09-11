@@ -1,3 +1,4 @@
+from django.utils.crypto import get_random_string
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -53,7 +54,11 @@ class UserWriteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         user = User(**validated_data)
-        user.set_password(password or User.objects.make_random_password())
+        # BaseUserManager.make_random_password() was removed in Django 5.1 —
+        # generate a random temp password ourselves when the admin leaves the
+        # field blank (the account is created inactive-of-real-password until
+        # reset via the normal password flow).
+        user.set_password(password or get_random_string(32))
         user.save()
         return user
 

@@ -29,18 +29,48 @@ export default function AdminUsersPage() {
 
   const [username, setUsername] = useState("");
   const [fullName, setFullName] = useState("");
+  const [checkNumber, setCheckNumber] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("EMPLOYEE");
   const [password, setPassword] = useState("");
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  function extractErrorMessage(error: unknown): string {
+    if (error && typeof error === "object" && "data" in error) {
+      const data = (error as { data?: unknown }).data;
+      if (data && typeof data === "object") {
+        // DRF validation errors: {"field_name": ["message", ...], ...}
+        const parts = Object.entries(data as Record<string, unknown>).map(([field, messages]) => {
+          const text = Array.isArray(messages) ? messages.join(" ") : String(messages);
+          return `${field}: ${text}`;
+        });
+        if (parts.length > 0) return parts.join(" | ");
+      }
+    }
+    return "Failed to create user. Please try again.";
+  }
 
   async function handleCreate() {
-    if (!username.trim() || !fullName.trim()) return;
-    await createUser({ username, full_name: fullName, email, role, password: password || undefined }).unwrap();
-    setUsername("");
-    setFullName("");
-    setEmail("");
-    setPassword("");
-    setRole("EMPLOYEE");
+    if (!username.trim() || !fullName.trim() || !checkNumber.trim()) return;
+    setCreateError(null);
+    try {
+      await createUser({
+        username,
+        full_name: fullName,
+        check_number: checkNumber,
+        email,
+        role,
+        password: password || undefined,
+      }).unwrap();
+      setUsername("");
+      setFullName("");
+      setCheckNumber("");
+      setEmail("");
+      setPassword("");
+      setRole("EMPLOYEE");
+    } catch (err) {
+      setCreateError(extractErrorMessage(err));
+    }
   }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.count / 25)) : 1;
@@ -59,6 +89,10 @@ export default function AdminUsersPage() {
           <div>
             <Label htmlFor="fullName">Full name</Label>
             <Input id="fullName" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="checkNumber">Check number</Label>
+            <Input id="checkNumber" value={checkNumber} onChange={(e) => setCheckNumber(e.target.value)} />
           </div>
           <div>
             <Label htmlFor="email">Email</Label>
@@ -84,6 +118,11 @@ export default function AdminUsersPage() {
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
         </div>
+        {createError ? (
+          <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {createError}
+          </p>
+        ) : null}
         <Button className="mt-3" onClick={handleCreate} disabled={isCreating}>
           Add User
         </Button>
