@@ -26,6 +26,10 @@ export const personTypesApi = baseApi.injectEndpoints({
       query: ({ id }) => ({ url: `person-types/${id}/`, method: "PATCH", body: { is_active: false } }),
       invalidatesTags: ["PersonTypes"],
     }),
+    activatePersonType: builder.mutation<PersonType, { id: number }>({
+      query: ({ id }) => ({ url: `person-types/${id}/`, method: "PATCH", body: { is_active: true } }),
+      invalidatesTags: ["PersonTypes"],
+    }),
     // POST /api/person-types/reorder/ — bulk sort_order update, mirrors
     // leave-types/reorder/.
     reorderPersonTypes: builder.mutation<PersonType[], { id: number; sort_order: number }[]>({
@@ -40,5 +44,6 @@ export const {
   useCreatePersonTypeMutation,
   useUpdatePersonTypeMutation,
   useDeactivatePersonTypeMutation,
+  useActivatePersonTypeMutation,
   useReorderPersonTypesMutation,
 } = personTypesApi;

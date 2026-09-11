@@ -6,8 +6,14 @@ import AdminPersonTypesPage from "./page";
 import type { PersonType, User } from "@/types";
 
 // Renders the person-types admin page inside AppShell/RoleGuard as an
-// authenticated SYSTEM_ADMIN, mocks fetch, and asserts: list/create/reorder
-// — mirrors app/admin/leave-policies/page.test.tsx's harness.
+// authenticated SYSTEM_ADMIN, mocks fetch, and asserts: list/create/edit/
+// activate/reorder — mirrors app/admin/leave-types/page.test.tsx's harness.
+//
+// Regression coverage: the create form used to only collect `name`, but
+// `code` is required and unique on the backend (like LeaveType), so every
+// create attempt 400'd. Separately, "Edit" used to PATCH the row's own
+// unchanged name/code back to itself with no input field, and inactive
+// rows had no way back to active from the UI.
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
@@ -24,7 +30,7 @@ const mockAdmin: User = {
 };
 
 function samplePersonType(overrides: Partial<PersonType> = {}): PersonType {
-  return { id: 1, name: "Mfanyakazi", is_active: true, sort_order: 1, ...overrides };
+  return { id: 1, name: "Mimi", code: "SELF", is_active: true, sort_order: 1, ...overrides };
 }
 
 function jsonResponse(body: unknown, status = 200) {
@@ -50,7 +56,9 @@ function setupFetch(personTypes: PersonType[]) {
 
     if (url.includes("person-types/reorder/")) return jsonResponse(personTypes);
     if (url.includes("person-types/") && method === "POST") return jsonResponse(samplePersonType({ id: 99 }));
-    if (url.includes("person-types/") && method === "PATCH") return jsonResponse(samplePersonType());
+    if (url.match(/person-types\/\d+\/$/) && method === "PATCH") {
+      return jsonResponse({ ...personTypes[0], ...(body as object) });
+    }
     if (url.includes("person-types/")) return jsonResponse(personTypes);
     if (url.includes("notifications/")) return jsonResponse([]);
     return jsonResponse([]);
@@ -76,14 +84,14 @@ describe("AdminPersonTypesPage", () => {
 
   it("renders existing person types sorted by sort_order", async () => {
     renderPage([
-      samplePersonType({ id: 1, name: "Mke/Mume", sort_order: 2 }),
-      samplePersonType({ id: 2, name: "Mfanyakazi", sort_order: 1 }),
+      samplePersonType({ id: 1, name: "Mke", code: "SPOUSE", sort_order: 2 }),
+      samplePersonType({ id: 2, name: "Mimi", code: "SELF", sort_order: 1 }),
     ]);
 
     const table = await screen.findByRole("table");
     const rows = within(table).getAllByRole("row").slice(1); // skip header
-    expect(within(rows[0]).getByText("Mfanyakazi")).toBeInTheDocument();
-    expect(within(rows[1]).getByText("Mke/Mume")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Mimi")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Mke")).toBeInTheDocument();
   });
 
   it("shows an empty-state message when no person types exist", async () => {
@@ -91,27 +99,32 @@ describe("AdminPersonTypesPage", () => {
     expect(await screen.findByText(/No person types configured/i)).toBeInTheDocument();
   });
 
-  it("submits the create form with the expected body", async () => {
+  it("requires both name and code before submitting the create form (code is required/unique on the backend)", async () => {
     const user = userEvent.setup();
     const { calls } = renderPage([]);
-
     await screen.findByText(/No person types configured/i);
 
     await user.type(screen.getByLabelText("Name"), "Mtoto");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
+    // No code entered -> handleCreate's guard should block the request.
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+
+    await user.type(screen.getByLabelText("Code"), "CHILD");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
     await waitFor(() => {
       const postCall = calls.find((c) => c.method === "POST" && c.url.includes("person-types/"));
       expect(postCall).toBeTruthy();
-      expect(postCall?.body).toMatchObject({ name: "Mtoto", is_active: true });
+      expect(postCall?.body).toMatchObject({ name: "Mtoto", code: "CHILD", is_active: true });
     });
   });
 
   it("reorders via the up/down buttons using the bulk reorder endpoint", async () => {
     const user = userEvent.setup();
     const { calls } = renderPage([
-      samplePersonType({ id: 1, name: "First", sort_order: 1 }),
-      samplePersonType({ id: 2, name: "Second", sort_order: 2 }),
+      samplePersonType({ id: 1, name: "First", code: "F", sort_order: 1 }),
+      samplePersonType({ id: 2, name: "Second", code: "S", sort_order: 2 }),
     ]);
 
     const table = await screen.findByRole("table");
@@ -126,5 +139,83 @@ describe("AdminPersonTypesPage", () => {
         { id: 2, sort_order: 1 },
       ]);
     });
+  });
+
+  it("clicking Edit opens editable Code/Name inputs pre-filled with the current values, and Save sends the actual new value", async () => {
+    const user = userEvent.setup();
+    const { calls } = renderPage();
+    await screen.findByText("Mimi");
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const nameInput = screen.getByLabelText("Edit name") as HTMLInputElement;
+    const codeInput = screen.getByLabelText("Edit code") as HTMLInputElement;
+    expect(nameInput.value).toBe("Mimi");
+    expect(codeInput.value).toBe("SELF");
+
+    await user.clear(nameInput);
+    await user.type(nameInput, "Mimi Mwenyewe");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const patchCall = calls.find((c) => c.method === "PATCH" && c.url.includes("person-types/1/"));
+      expect(patchCall).toBeDefined();
+      expect(patchCall?.body).toMatchObject({ name: "Mimi Mwenyewe", code: "SELF" });
+    });
+  });
+
+  it("Cancel discards edits without saving", async () => {
+    const user = userEvent.setup();
+    const { calls } = renderPage();
+    await screen.findByText("Mimi");
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.type(screen.getByLabelText("Edit name"), " extra");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByText("Mimi")).toBeInTheDocument();
+    expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  });
+
+  it("shows an Activate button (not Deactivate) for an inactive person type, and PATCHes is_active: true", async () => {
+    const user = userEvent.setup();
+    const { calls } = renderPage([samplePersonType({ id: 2, name: "Old Category", code: "OLD", is_active: false })]);
+    await screen.findByText("Old Category");
+
+    expect(screen.getByText("Inactive")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deactivate" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Activate" }));
+
+    await waitFor(() => {
+      const patchCall = calls.find((c) => c.method === "PATCH" && c.url.includes("person-types/2/"));
+      expect(patchCall).toBeDefined();
+      expect(patchCall?.body).toMatchObject({ is_active: true });
+    });
+  });
+
+  it("shows a visible error instead of crashing when the save is rejected", async () => {
+    const user = userEvent.setup();
+    global.fetch = jest.fn().mockImplementation(async (input: Request | string) => {
+      const req = typeof input === "string" ? new Request(input) : input;
+      if (req.url.includes("notifications/")) return jsonResponse([]);
+      if (req.method === "PATCH") {
+        return new Response(JSON.stringify({ detail: "Not authorized." }), {
+          status: 403,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return jsonResponse([samplePersonType()]);
+    }) as unknown as typeof fetch;
+    const store = makeStore({ user: mockAdmin, accessToken: "token", refreshToken: null, isAuthenticated: true, hydrated: true });
+    render(
+      <Provider store={store}>
+        <AdminPersonTypesPage />
+      </Provider>
+    );
+    await screen.findByText("Mimi");
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Not authorized.")).toBeInTheDocument();
   });
 });
