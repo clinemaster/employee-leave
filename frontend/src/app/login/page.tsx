@@ -154,18 +154,19 @@ function LoginForm() {
 }
 
 // Shared background for both the credentials and MFA-challenge screens: the
-// NAOT logo rendered as a large, faint watermark filling the entire page.
+// Government of Tanzania emblem rendered as a large, faint watermark
+// filling the entire page.
 function LoginBackground({ children }: { children: React.ReactNode }) {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4 md:justify-start md:pl-40 lg:pl-56">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0">
         {/* Plain <img>, not next/image: a static watermark doesn't need
             responsive srcset/optimization, and this keeps it simple.
-            object-contain (not cover) keeps the whole logo visible,
+            object-contain (not cover) keeps the whole emblem visible,
             uncropped, at just under full viewport size. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/naot-logo.png"
+          src="/emblem.png"
           alt=""
           className="h-full w-full object-contain opacity-10"
         />
