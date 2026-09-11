@@ -28,6 +28,7 @@ SECTION_A_FIELDS = {
     'designation', 'station', 'division_department', 'phone_number', 'email',
     'contact_address', 'leave_type', 'leave_number', 'travel_assistance',
     'start_date', 'last_date', 'dependants',
+    'travel_routes', 'taxi_expenses', 'mizigo_items',
 }
 SECTION_B1_FIELDS = {'recommendation'}  # LeaveRecommendation nested writable fields
 SECTION_B2_FIELDS = {'hr_review'}  # LeaveHRReview nested writable fields

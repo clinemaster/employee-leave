@@ -6,6 +6,7 @@ from .entitlement import compute_entitlement
 from .models import (
     Holiday, LeaveApplication, LeaveApproval, LeaveBalance, LeaveDependant,
     LeaveHRReview, LeavePolicy, LeaveRecommendation, LeaveType,
+    MizigoItem, PersonType, TaxiExpense, TravelRoute, TravelRoutePassenger,
 )
 from .workingdays import calculate_working_days
 
@@ -13,6 +14,12 @@ from .workingdays import calculate_working_days
 class LeaveTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveType
+        fields = ['id', 'name', 'code', 'is_active', 'sort_order']
+
+
+class PersonTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PersonType
         fields = ['id', 'name', 'code', 'is_active', 'sort_order']
 
 
@@ -58,6 +65,66 @@ class LeaveApprovalSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'reviewer']
 
 
+class TravelRoutePassengerSerializer(serializers.ModelSerializer):
+    """Read/write serializer for one Wahusika (person type) row on a TravelRoute."""
+    person_type_name = serializers.CharField(source='person_type.name', read_only=True)
+    total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TravelRoutePassenger
+        fields = ['id', 'person_type', 'person_type_name', 'idadi', 'total']
+        read_only_fields = ['id']
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_total(self, obj):
+        return obj.total
+
+
+class TravelRouteSerializer(serializers.ModelSerializer):
+    """Read/write serializer for one NAULI route row, nested with its passengers."""
+    passengers = TravelRoutePassengerSerializer(many=True, required=False)
+    trips = serializers.ReadOnlyField()
+    naule_total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TravelRoute
+        fields = [
+            'id', 'from_place', 'to_place', 'fare_per_person', 'trip_type',
+            'sort_order', 'trips', 'naule_total', 'passengers',
+        ]
+        read_only_fields = ['id']
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_naule_total(self, obj):
+        return obj.naule_total
+
+
+class TaxiExpenseSerializer(serializers.ModelSerializer):
+    total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaxiExpense
+        fields = ['id', 'description', 'number_of_trips', 'cost_per_trip', 'sort_order', 'total']
+        read_only_fields = ['id']
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_total(self, obj):
+        return obj.total
+
+
+class MizigoItemSerializer(serializers.ModelSerializer):
+    total = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MizigoItem
+        fields = ['id', 'description', 'quantity', 'unit_cost', 'sort_order', 'total']
+        read_only_fields = ['id']
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_total(self, obj):
+        return obj.total
+
+
 class LeaveApplicationSerializer(serializers.ModelSerializer):
     """Read serializer — full nested view of an application (all sections)."""
     dependants = LeaveDependantSerializer(many=True, read_only=True)
@@ -68,6 +135,15 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     working_days_preview = serializers.SerializerMethodField()
 
+    # Travel payment request (JEDWALI 1)
+    travel_routes = TravelRouteSerializer(many=True, read_only=True)
+    taxi_expenses = TaxiExpenseSerializer(many=True, read_only=True)
+    mizigo_items = MizigoItemSerializer(many=True, read_only=True)
+    naule_grand_total = serializers.SerializerMethodField()
+    taxi_grand_total = serializers.SerializerMethodField()
+    mizigo_grand_total = serializers.SerializerMethodField()
+    travel_payment_grand_total = serializers.SerializerMethodField()
+
     class Meta:
         model = LeaveApplication
         fields = [
@@ -77,7 +153,9 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             'contact_address', 'leave_type', 'leave_type_name', 'leave_number',
             'travel_assistance', 'start_date', 'last_date', 'total_working_days',
             'working_days_preview', 'dependants', 'recommendation', 'hr_review',
-            'approval', 'submitted_at', 'created_at', 'updated_at',
+            'approval', 'travel_routes', 'taxi_expenses', 'mizigo_items',
+            'naule_grand_total', 'taxi_grand_total', 'mizigo_grand_total',
+            'travel_payment_grand_total', 'submitted_at', 'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'application_number', 'status', 'employee', 'total_working_days',
@@ -90,6 +168,22 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
             return calculate_working_days(obj.start_date, obj.last_date)
         return None
 
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_naule_grand_total(self, obj):
+        return obj.naule_grand_total
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_taxi_grand_total(self, obj):
+        return obj.taxi_grand_total
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_mizigo_grand_total(self, obj):
+        return obj.mizigo_grand_total
+
+    @extend_schema_field(OpenApiTypes.DECIMAL)
+    def get_travel_payment_grand_total(self, obj):
+        return obj.travel_payment_grand_total
+
 
 class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
     """
@@ -99,6 +193,9 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
     view (permissions.assert_can_edit_fields) before this is called.
     """
     dependants = LeaveDependantSerializer(many=True, required=False)
+    travel_routes = TravelRouteSerializer(many=True, required=False)
+    taxi_expenses = TaxiExpenseSerializer(many=True, required=False)
+    mizigo_items = MizigoItemSerializer(many=True, required=False)
 
     class Meta:
         model = LeaveApplication
@@ -107,7 +204,7 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
             'full_name', 'designation', 'station', 'division_department',
             'phone_number', 'email', 'contact_address', 'leave_type',
             'leave_number', 'travel_assistance', 'start_date', 'last_date',
-            'dependants',
+            'dependants', 'travel_routes', 'taxi_expenses', 'mizigo_items',
         ]
         read_only_fields = ['id']
 
@@ -120,15 +217,24 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         dependants_data = validated_data.pop('dependants', [])
+        travel_routes_data = validated_data.pop('travel_routes', [])
+        taxi_expenses_data = validated_data.pop('taxi_expenses', [])
+        mizigo_items_data = validated_data.pop('mizigo_items', [])
         validated_data['employee'] = self.context['request'].user
         application = LeaveApplication.objects.create(**validated_data)
         self._sync_working_days(application)
         for dep in dependants_data:
             LeaveDependant.objects.create(application=application, **dep)
+        self._sync_travel_routes(application, travel_routes_data)
+        self._sync_taxi_expenses(application, taxi_expenses_data)
+        self._sync_mizigo_items(application, mizigo_items_data)
         return application
 
     def update(self, instance, validated_data):
         dependants_data = validated_data.pop('dependants', None)
+        travel_routes_data = validated_data.pop('travel_routes', None)
+        taxi_expenses_data = validated_data.pop('taxi_expenses', None)
+        mizigo_items_data = validated_data.pop('mizigo_items', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         self._sync_working_days(instance, save=False)
@@ -137,7 +243,36 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
             instance.dependants.all().delete()
             for dep in dependants_data:
                 LeaveDependant.objects.create(application=instance, **dep)
+        if travel_routes_data is not None:
+            self._sync_travel_routes(instance, travel_routes_data)
+        if taxi_expenses_data is not None:
+            self._sync_taxi_expenses(instance, taxi_expenses_data)
+        if mizigo_items_data is not None:
+            self._sync_mizigo_items(instance, mizigo_items_data)
         return instance
+
+    @staticmethod
+    def _sync_travel_routes(application, routes_data):
+        """Delete-all-and-recreate, same pattern as dependants (two levels
+        of nesting: each route recreates its own passengers)."""
+        application.travel_routes.all().delete()
+        for route_data in routes_data:
+            passengers_data = route_data.pop('passengers', [])
+            route = TravelRoute.objects.create(application=application, **route_data)
+            for passenger_data in passengers_data:
+                TravelRoutePassenger.objects.create(route=route, **passenger_data)
+
+    @staticmethod
+    def _sync_taxi_expenses(application, taxi_data):
+        application.taxi_expenses.all().delete()
+        for expense_data in taxi_data:
+            TaxiExpense.objects.create(application=application, **expense_data)
+
+    @staticmethod
+    def _sync_mizigo_items(application, mizigo_data):
+        application.mizigo_items.all().delete()
+        for item_data in mizigo_data:
+            MizigoItem.objects.create(application=application, **item_data)
 
     @staticmethod
     def _sync_working_days(application, save=True):

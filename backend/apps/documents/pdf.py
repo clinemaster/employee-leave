@@ -1,10 +1,12 @@
 """
-Two-page NAOT leave application PDF generator, built with reportlab
-(pure-Python, no system deps — chosen over weasyprint for portability).
+NAOT leave application PDF generator, built with reportlab (pure-Python, no
+system deps — chosen over weasyprint for portability).
 
 Page 1: Section A (application details) + Section B1 (HOD recommendation)
         + Section B2 (HR verification).
 Page 2: Section C (Authorizing Officer decision).
+Page 3 (only when travel payment data exists): JEDWALI 1 — MCHANGANUO WA
+        MAOMBI YA MALIPO (travel payment breakdown: NAULI/TAXI/MIZIGO).
 
 Signature areas are rendered as BLANK LINES with printed name/designation/
 date labels only — this is a paper-workflow placeholder, NOT a digital
@@ -102,6 +104,91 @@ def _kv_table(rows, col_widths=(4.5 * cm, 4.2 * cm, 4.5 * cm, 4.2 * cm)):
     return table
 
 
+def _money(value):
+    """Format a Decimal/number with thousands separators, no decimals
+    (matches the spec's examples, e.g. "85,000")."""
+    return f'{value:,.0f}'
+
+
+def _jedwali_table(rows, col_widths=(6.5 * cm, 2.0 * cm, 5.5 * cm, 3.5 * cm)):
+    table = Table(rows, colWidths=list(col_widths))
+    table.setStyle(TableStyle([
+        ('FONTSIZE', (0, 0), (-1, -1), 8.5),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    return table
+
+
+def _jedwali_page(application):
+    """Page 3: JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO (travel payment
+    breakdown). Only built when the application has at least one travel
+    route, taxi expense, or mizigo item — see has_travel_payment_data()."""
+    elements = []
+    elements += _header_block()
+    elements.append(Paragraph('JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO', heading_style))
+
+    # --- A: NAULI ---
+    elements.append(Paragraph('A: NAULI', normal_style))
+    routes = list(application.travel_routes.all())
+    if routes:
+        rows = [['WAHUSIKA', 'IDADI', 'MCHANGANUO', 'JUMLA']]
+        for route in routes:
+            passengers = list(route.passengers.all())
+            if passengers:
+                for passenger in passengers:
+                    trip_expr = (
+                        f'{_money(route.fare_per_person)} x {passenger.idadi}'
+                        if route.trips == 1
+                        else f'{_money(route.fare_per_person)} x {passenger.idadi}x{route.trips}'
+                    )
+                    rows.append([
+                        f'{passenger.person_type.name} ({route.from_place} - {route.to_place})',
+                        str(passenger.idadi),
+                        trip_expr,
+                        f'TZS {_money(passenger.total)}',
+                    ])
+            else:
+                rows.append([
+                    f'{route.from_place} - {route.to_place}', '—',
+                    _money(route.fare_per_person), 'TZS 0',
+                ])
+        rows.append(['', '', 'NAULI', f'TZS {_money(application.naule_grand_total)}'])
+        elements.append(_jedwali_table(rows))
+    else:
+        elements.append(Paragraph('—', normal_style))
+    elements.append(Spacer(1, 0.3 * cm))
+
+    # --- B: TAXI ---
+    elements.append(Paragraph(f'B: TAXI &nbsp;&nbsp;&nbsp; TZS {_money(application.taxi_grand_total)}', normal_style))
+    elements.append(Spacer(1, 0.2 * cm))
+
+    # --- C: MIZIGO ---
+    elements.append(Paragraph(f'C: MIZIGO &nbsp;&nbsp;&nbsp; TZS {_money(application.mizigo_grand_total)}', normal_style))
+    elements.append(Spacer(1, 0.5 * cm))
+
+    # --- JUMLA KUU ---
+    grand_total_table = Table(
+        [['JUMLA KUU'], [f'TZS {_money(application.travel_payment_grand_total)}']],
+        colWidths=[17.5 * cm],
+    )
+    grand_total_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.grey),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(grand_total_table)
+
+    return elements
+
+
 def _signature_block(label):
     rows = [
         [Paragraph(f'<b>{label}</b>', normal_style)],
@@ -192,8 +279,24 @@ def _build_pdf_bytes(application):
         small_style,
     ))
 
+    # Page 3 (only when travel payment data exists): JEDWALI 1
+    if has_travel_payment_data(application):
+        elements.append(PageBreak())
+        elements += _jedwali_page(application)
+
     doc.build(elements)
     return buffer.getvalue()
+
+
+def has_travel_payment_data(application):
+    """True if the application has any NAULI/TAXI/MIZIGO rows — i.e. Travel
+    Assistance breakdown data was actually entered, so the JEDWALI 1 page is
+    worth rendering rather than an empty page."""
+    return (
+        application.travel_routes.exists()
+        or application.taxi_expenses.exists()
+        or application.mizigo_items.exists()
+    )
 
 
 def generate_leave_application_pdf(application, generated_by):

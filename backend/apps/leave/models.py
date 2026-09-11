@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
@@ -223,6 +225,28 @@ class LeaveApplication(models.Model):
                     next_seq = 1
             return f'{prefix}{next_seq:06d}'
 
+    # --- Travel payment request (JEDWALI 1) computed totals ---------------
+    # Grand totals for the "JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO" travel
+    # payment breakdown. Never stored — always summed live from the nested
+    # travel_routes/taxi_expenses/mizigo_items rows, to avoid drift.
+
+    @property
+    def naule_grand_total(self):
+        return sum((route.naule_total for route in self.travel_routes.all()), Decimal('0'))
+
+    @property
+    def taxi_grand_total(self):
+        return sum((expense.total for expense in self.taxi_expenses.all()), Decimal('0'))
+
+    @property
+    def mizigo_grand_total(self):
+        return sum((item.total for item in self.mizigo_items.all()), Decimal('0'))
+
+    @property
+    def travel_payment_grand_total(self):
+        """JUMLA KUU: NAULI + TAXI + MIZIGO grand total."""
+        return self.naule_grand_total + self.taxi_grand_total + self.mizigo_grand_total
+
 
 class LeaveDependant(models.Model):
     """Dependant declared on a leave application (for travel/family leave)."""
@@ -235,6 +259,122 @@ class LeaveDependant(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.relationship})'
+
+
+class PersonType(models.Model):
+    """
+    Configurable/admin-manageable catalog of traveler/person categories used
+    on the "JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO" travel payment
+    breakdown (Wahusika). Copy of LeaveType's shape — same CRUD/reorder
+    pattern applies (see PersonTypeViewSet).
+    """
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(max_length=20, unique=True)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveIntegerField(default=0)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+
+    def __str__(self):
+        return self.name
+
+
+class TravelRoute(models.Model):
+    """
+    One NAULI (fare) route row of the travel payment breakdown (Section A /
+    JEDWALI 1-A). `fare_per_person` is charged once per ONE_WAY trip or
+    twice per ROUND_TRIP (see `trips`).
+    """
+
+    class TripType(models.TextChoices):
+        ONE_WAY = 'ONE_WAY', 'One Way'
+        ROUND_TRIP = 'ROUND_TRIP', 'Round Trip'
+
+    application = models.ForeignKey(
+        LeaveApplication, on_delete=models.CASCADE, related_name='travel_routes'
+    )
+    from_place = models.CharField(max_length=255)
+    to_place = models.CharField(max_length=255)
+    fare_per_person = models.DecimalField(max_digits=12, decimal_places=2)
+    trip_type = models.CharField(max_length=16, choices=TripType.choices, default=TripType.ONE_WAY)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return f'{self.from_place} -> {self.to_place}'
+
+    @property
+    def trips(self):
+        """Number of fare charges per person: 1 for one-way, 2 for round-trip.
+        Never stored — always derived from trip_type to avoid drift."""
+        return 2 if self.trip_type == self.TripType.ROUND_TRIP else 1
+
+    @property
+    def naule_total(self):
+        """Sum of this route's passenger totals (NAULI subtotal for this row)."""
+        return sum((p.total for p in self.passengers.all()), Decimal('0'))
+
+
+class TravelRoutePassenger(models.Model):
+    """One Wahusika (person type) row within a TravelRoute, with Idadi (count)."""
+    route = models.ForeignKey(TravelRoute, on_delete=models.CASCADE, related_name='passengers')
+    person_type = models.ForeignKey(PersonType, on_delete=models.PROTECT, related_name='travel_route_passengers')
+    idadi = models.PositiveIntegerField()
+
+    def __str__(self):
+        return f'{self.person_type} x{self.idadi}'
+
+    @property
+    def total(self):
+        return self.route.fare_per_person * self.idadi * self.route.trips
+
+
+class TaxiExpense(models.Model):
+    """One TAXI row of the travel payment breakdown (JEDWALI 1-B)."""
+    application = models.ForeignKey(
+        LeaveApplication, on_delete=models.CASCADE, related_name='taxi_expenses'
+    )
+    description = models.CharField(max_length=255, blank=True)
+    number_of_trips = models.PositiveIntegerField()
+    cost_per_trip = models.DecimalField(max_digits=12, decimal_places=2)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.description or f'Taxi expense #{self.pk}'
+
+    @property
+    def total(self):
+        return self.number_of_trips * self.cost_per_trip
+
+
+class MizigoItem(models.Model):
+    """One MIZIGO (luggage) row of the travel payment breakdown (JEDWALI 1-C)."""
+    application = models.ForeignKey(
+        LeaveApplication, on_delete=models.CASCADE, related_name='mizigo_items'
+    )
+    description = models.CharField(max_length=255)
+    quantity = models.PositiveIntegerField(default=1)
+    unit_cost = models.DecimalField(max_digits=12, decimal_places=2)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+
+    def __str__(self):
+        return self.description
+
+    @property
+    def total(self):
+        return self.quantity * self.unit_cost
 
 
 class LeavePolicy(models.Model):

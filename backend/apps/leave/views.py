@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 from apps.audit.models import AuditLog
 from apps.documents.models import LeaveDocument
 
-from .models import Holiday, LeaveApplication, LeaveBalance, LeavePolicy, LeaveType
+from .models import Holiday, LeaveApplication, LeaveBalance, LeavePolicy, LeaveType, PersonType
 from .permissions import (
     CanAccessLeaveApplication, IsSystemAdmin, assert_can_edit_fields,
     can_view_application, visible_queryset_for,
@@ -20,7 +20,8 @@ from .permissions import (
 from .serializers import (
     HolidaySerializer, LeaveApplicationSerializer, LeaveApplicationWriteSerializer,
     LeaveBalanceSerializer, LeavePolicySerializer, LeaveTypeSerializer,
-    WorkflowActionSerializer, WorkingDaysPreviewResponseSerializer, WorkingDaysPreviewSerializer,
+    PersonTypeSerializer, WorkflowActionSerializer,
+    WorkingDaysPreviewResponseSerializer, WorkingDaysPreviewSerializer,
 )
 from .workflow import WorkflowError, perform_transition
 from .workingdays import calculate_working_days
@@ -81,6 +82,58 @@ class LeaveTypeViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
 
         reordered = LeaveType.objects.filter(id__in=seen_ids).order_by('sort_order', 'name')
         return Response(LeaveTypeSerializer(reordered, many=True).data)
+
+
+class PersonTypeViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
+    """
+    Admin-configurable catalog of traveler/person categories (Wahusika) used
+    on the travel payment breakdown. Mirrors LeaveTypeViewSet exactly,
+    including the bulk reorder action.
+    """
+    queryset = PersonType.objects.filter(deleted_at__isnull=True)
+    serializer_class = PersonTypeSerializer
+    filterset_fields = ['is_active']
+
+    @action(detail=False, methods=['post'])
+    def reorder(self, request):
+        """
+        POST /api/person-types/reorder/
+        Body: `[{"id": 1, "sort_order": 0}, {"id": 2, "sort_order": 1}, ...]`
+        SYSTEM_ADMIN only. Atomic, all-or-nothing — see
+        LeaveTypeViewSet.reorder for the identical validation/behavior this
+        replicates.
+        """
+        payload = request.data
+        if not isinstance(payload, list) or not payload:
+            raise ValidationError('Expected a non-empty list of {"id", "sort_order"} objects.')
+
+        entries = []
+        seen_ids = set()
+        for item in payload:
+            if not isinstance(item, dict) or 'id' not in item or 'sort_order' not in item:
+                raise ValidationError('Each entry must be an object with "id" and "sort_order".')
+            try:
+                type_id = int(item['id'])
+                sort_order = int(item['sort_order'])
+            except (TypeError, ValueError):
+                raise ValidationError('"id" and "sort_order" must be integers.')
+            if type_id in seen_ids:
+                raise ValidationError(f'Duplicate id: {type_id}.')
+            seen_ids.add(type_id)
+            entries.append((type_id, sort_order))
+
+        existing = PersonType.objects.filter(deleted_at__isnull=True, id__in=seen_ids)
+        existing_ids = set(existing.values_list('id', flat=True))
+        missing_ids = seen_ids - existing_ids
+        if missing_ids:
+            raise ValidationError(f'Unknown person type id(s): {sorted(missing_ids)}.')
+
+        with transaction.atomic():
+            for type_id, sort_order in entries:
+                PersonType.objects.filter(id=type_id).update(sort_order=sort_order)
+
+        reordered = PersonType.objects.filter(id__in=seen_ids).order_by('sort_order', 'name')
+        return Response(PersonTypeSerializer(reordered, many=True).data)
 
 
 class HolidayViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
@@ -226,7 +279,10 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             return LeaveApplication.objects.none()
         qs = LeaveApplication.objects.select_related(
             'employee', 'leave_type', 'recommendation', 'hr_review', 'approval'
-        ).prefetch_related('dependants')
+        ).prefetch_related(
+            'dependants', 'travel_routes__passengers__person_type',
+            'taxi_expenses', 'mizigo_items',
+        )
         return visible_queryset_for(self.request.user, qs)
 
     def get_serializer_class(self):

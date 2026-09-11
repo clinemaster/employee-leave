@@ -5,12 +5,13 @@ from .dashboard import DashboardStatsView
 from .reports import LeaveApplicationReportView
 from .views import (
     HolidayViewSet, LeaveApplicationViewSet, LeaveBalanceViewSet,
-    LeavePolicyViewSet, LeaveTypeViewSet, WorkingDaysPreviewView,
+    LeavePolicyViewSet, LeaveTypeViewSet, PersonTypeViewSet, WorkingDaysPreviewView,
 )
 
 router = DefaultRouter()
 router.register('leave-applications', LeaveApplicationViewSet, basename='leaveapplication')
 router.register('leave-types', LeaveTypeViewSet, basename='leavetype')
+router.register('person-types', PersonTypeViewSet, basename='persontype')
 router.register('holidays', HolidayViewSet, basename='holiday')
 router.register('leave-balances', LeaveBalanceViewSet, basename='leavebalance')
 router.register('leave-policies', LeavePolicyViewSet, basename='leavepolicy')

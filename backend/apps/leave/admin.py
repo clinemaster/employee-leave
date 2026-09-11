@@ -3,12 +3,20 @@ from django.contrib import admin
 from .models import (
     LeaveType, Holiday, LeaveApplication, LeaveDependant,
     LeaveRecommendation, LeaveHRReview, LeaveApproval, LeaveBalance,
-    LeavePolicy,
+    LeavePolicy, PersonType, TravelRoute, TravelRoutePassenger,
+    TaxiExpense, MizigoItem,
 )
 
 
 @admin.register(LeaveType)
 class LeaveTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'is_active', 'sort_order')
+    search_fields = ('name', 'code')
+    list_filter = ('is_active',)
+
+
+@admin.register(PersonType)
+class PersonTypeAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'is_active', 'sort_order')
     search_fields = ('name', 'code')
     list_filter = ('is_active',)
@@ -26,6 +34,21 @@ class LeaveDependantInline(admin.TabularInline):
     extra = 0
 
 
+class TravelRouteInline(admin.TabularInline):
+    model = TravelRoute
+    extra = 0
+
+
+class TaxiExpenseInline(admin.TabularInline):
+    model = TaxiExpense
+    extra = 0
+
+
+class MizigoItemInline(admin.TabularInline):
+    model = MizigoItem
+    extra = 0
+
+
 @admin.register(LeaveApplication)
 class LeaveApplicationAdmin(admin.ModelAdmin):
     list_display = (
@@ -38,8 +61,33 @@ class LeaveApplicationAdmin(admin.ModelAdmin):
         'full_name', 'check_number',
     )
     readonly_fields = ('application_number', 'created_at', 'updated_at')
-    inlines = [LeaveDependantInline]
+    inlines = [LeaveDependantInline, TravelRouteInline, TaxiExpenseInline, MizigoItemInline]
     date_hierarchy = 'created_at'
+
+
+class TravelRoutePassengerInline(admin.TabularInline):
+    model = TravelRoutePassenger
+    extra = 0
+
+
+@admin.register(TravelRoute)
+class TravelRouteAdmin(admin.ModelAdmin):
+    list_display = ('application', 'from_place', 'to_place', 'fare_per_person', 'trip_type', 'sort_order')
+    list_filter = ('trip_type',)
+    search_fields = ('from_place', 'to_place', 'application__application_number')
+    inlines = [TravelRoutePassengerInline]
+
+
+@admin.register(TaxiExpense)
+class TaxiExpenseAdmin(admin.ModelAdmin):
+    list_display = ('application', 'description', 'number_of_trips', 'cost_per_trip', 'sort_order')
+    search_fields = ('description', 'application__application_number')
+
+
+@admin.register(MizigoItem)
+class MizigoItemAdmin(admin.ModelAdmin):
+    list_display = ('application', 'description', 'quantity', 'unit_cost', 'sort_order')
+    search_fields = ('description', 'application__application_number')
 
 
 @admin.register(LeaveRecommendation)
