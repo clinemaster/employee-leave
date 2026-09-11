@@ -152,6 +152,16 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 25,
     'EXCEPTION_HANDLER': 'apps.leave.exceptions.custom_exception_handler',
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    # Without this, DRF serializes every DecimalField as a JSON string
+    # (e.g. "85000.00") while computed SerializerMethodFields returning a
+    # Decimal serialize as a JSON number — an inconsistent wire contract
+    # that silently breaks a frontend typed against `number` for money
+    # fields (discovered via the Travel Payment Request feature, where
+    # raw fields like fare_per_person came back as strings but the
+    # computed `total`/`naule_total` fields came back as numbers). This
+    # makes all DecimalFields serialize as numbers everywhere, matching
+    # what the computed fields already did.
+    'COERCE_DECIMAL_TO_STRING': False,
     # Rate limiting (brute-force / resource-abuse protection). 'anon'/'user'
     # are blanket defaults applied to every request; 'login', 'pdf_export'
     # and 'report_export' are tighter per-endpoint scopes applied via

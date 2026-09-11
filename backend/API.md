@@ -6,6 +6,14 @@ Auth: JWT (djangorestframework-simplejwt), `Authorization: Bearer <access>`.
 All list endpoints are paginated (`PageNumberPagination`, `page_size=25`):
 `{"count", "next", "previous", "results": [...]}`.
 
+All monetary/decimal fields (e.g. `fare_per_person`, `cost_per_trip`, `unit_cost`,
+`annual_entitlement`, and every computed total) serialize as JSON **numbers**,
+not strings (`COERCE_DECIMAL_TO_STRING: False` in settings.py) — safe to type
+as `number` on the frontend. This was made consistent project-wide after the
+Travel Payment Request feature exposed an inconsistency: raw `DecimalField`s
+used to serialize as strings (`"85000.00"`) while computed
+`SerializerMethodField` totals already came back as numbers.
+
 ## Interactive API docs (Swagger / OpenAPI)
 
 Generated automatically from the actual DRF views/serializers via

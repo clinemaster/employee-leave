@@ -174,7 +174,9 @@ def test_system_admin_can_crud_policy(as_user, sysadmin_user, leave_type):
 
     resp = client.patch(f'/api/leave-policies/{policy_id}/', {'annual_entitlement': '35.00'}, format='json')
     assert resp.status_code == 200
-    assert resp.data['annual_entitlement'] == '35.00'
+    # DecimalFields serialize as JSON numbers (COERCE_DECIMAL_TO_STRING=False,
+    # see settings.py), so `.data` (pre-render) holds a Decimal, not a str.
+    assert resp.data['annual_entitlement'] == Decimal('35.00')
 
     resp = client.delete(f'/api/leave-policies/{policy_id}/')
     assert resp.status_code == 204
