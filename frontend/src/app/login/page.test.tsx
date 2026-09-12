@@ -96,6 +96,36 @@ describe("LoginPage", () => {
     window.localStorage.clear();
   });
 
+  it("renders the split-card layout: rotating photo carousel plus the sign-in form", () => {
+    setupFetch({ mfa: false });
+    renderPage();
+
+    expect(screen.getByText("National Audit Office")).toBeInTheDocument();
+    expect(screen.getByText("Leave Management System")).toBeInTheDocument();
+    expect(screen.getByLabelText("Username")).toBeInTheDocument();
+    expect(screen.getByLabelText("Password")).toBeInTheDocument();
+    // The carousel renders all slides stacked (cross-fade via opacity), with
+    // one dot indicator per slide.
+    expect(screen.getAllByAltText("")).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Show slide 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show slide 5" })).toBeInTheDocument();
+  });
+
+  it("toggles password visibility when the eye icon is clicked", async () => {
+    setupFetch({ mfa: false });
+    const user = userEvent.setup();
+    renderPage();
+
+    const passwordInput = screen.getByLabelText("Password") as HTMLInputElement;
+    expect(passwordInput.type).toBe("password");
+
+    await user.click(screen.getByRole("button", { name: "Show password" }));
+    expect(passwordInput.type).toBe("text");
+
+    await user.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(passwordInput.type).toBe("password");
+  });
+
   it("logs in directly when the account has no MFA enabled", async () => {
     setupFetch({ mfa: false });
     const user = userEvent.setup();
@@ -103,7 +133,7 @@ describe("LoginPage", () => {
 
     await user.type(screen.getByLabelText("Username"), "emp1");
     await user.type(screen.getByLabelText("Password"), "TestPass123!");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "LOGIN" }));
 
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalled();
@@ -118,7 +148,7 @@ describe("LoginPage", () => {
 
     await user.type(screen.getByLabelText("Username"), "sysadmin1");
     await user.type(screen.getByLabelText("Password"), "TestPass123!");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "LOGIN" }));
 
     expect(await screen.findByLabelText("Authentication Code")).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
@@ -131,11 +161,11 @@ describe("LoginPage", () => {
 
     await user.type(screen.getByLabelText("Username"), "sysadmin1");
     await user.type(screen.getByLabelText("Password"), "TestPass123!");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "LOGIN" }));
 
     await screen.findByLabelText("Authentication Code");
     await user.type(screen.getByLabelText("Authentication Code"), "654321");
-    await user.click(screen.getByRole("button", { name: "Verify" }));
+    await user.click(screen.getByRole("button", { name: "VERIFY" }));
 
     await waitFor(() => {
       expect(pushMock).toHaveBeenCalled();
@@ -153,11 +183,11 @@ describe("LoginPage", () => {
 
     await user.type(screen.getByLabelText("Username"), "sysadmin1");
     await user.type(screen.getByLabelText("Password"), "TestPass123!");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "LOGIN" }));
 
     await screen.findByLabelText("Authentication Code");
     await user.type(screen.getByLabelText("Authentication Code"), "000000");
-    await user.click(screen.getByRole("button", { name: "Verify" }));
+    await user.click(screen.getByRole("button", { name: "VERIFY" }));
 
     expect(await screen.findByText(/invalid or expired code/i)).toBeInTheDocument();
     expect(pushMock).not.toHaveBeenCalled();
@@ -170,7 +200,7 @@ describe("LoginPage", () => {
 
     await user.type(screen.getByLabelText("Username"), "sysadmin1");
     await user.type(screen.getByLabelText("Password"), "TestPass123!");
-    await user.click(screen.getByRole("button", { name: "Sign in" }));
+    await user.click(screen.getByRole("button", { name: "LOGIN" }));
 
     await screen.findByLabelText("Authentication Code");
     await user.click(screen.getByRole("button", { name: "Back to sign in" }));
