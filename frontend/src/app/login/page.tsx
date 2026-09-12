@@ -164,9 +164,9 @@ function LoginForm() {
 
 function TitleBlock() {
   return (
-    <div className="mb-8 text-center md:text-left">
+    <div className="mb-8 text-center">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/naot-badge.png" alt="NAOT" className="mx-auto mb-4 h-20 w-20 object-contain md:mx-0" />
+      <img src="/naot-badge.png" alt="NAOT" className="mx-auto mb-4 h-28 w-28 object-contain" />
       <p className="text-lg text-gray-600">The United Republic of Tanzania</p>
       <p className="text-lg font-semibold text-gray-800">National Audit Office</p>
       <p className="text-2xl font-bold text-gray-900">Leave Management System</p>
