@@ -224,34 +224,24 @@ function LoginCarousel() {
   );
 }
 
-// Shared shell for both the credentials and MFA-challenge screens: a
+// Shared shell for both the credentials and MFA-challenge screens: the
+// Government emblem fills the entire page as the background, with a
 // rounded split card (rotating photo carousel on the left, sign-in content
-// on the right, with the Government emblem watermarked faintly behind it)
-// floating over a blurred, darkened backdrop built from the same photos.
+// on the right) floating on top of it.
 function LoginShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-900 px-4 py-10">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4 py-10">
       <div aria-hidden="true" className="absolute inset-0">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/login-carousel/slide-2.jpg"
-          alt=""
-          className="h-full w-full scale-110 object-cover opacity-40 blur-2xl"
-        />
-        <div className="absolute inset-0 bg-gray-900/60" />
+        <img src="/emblem.png" alt="" className="h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-white/70" />
       </div>
 
       <div className="relative z-10 flex w-full max-w-4xl min-h-[520px] overflow-hidden rounded-[2rem] bg-white shadow-2xl">
         <div className="hidden md:block md:w-1/2">
           <LoginCarousel />
         </div>
-        <div className="relative flex w-full flex-col justify-center overflow-hidden px-8 py-10 sm:px-12 md:w-1/2">
-          <div aria-hidden="true" className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/emblem.png" alt="" className="h-4/5 w-4/5 object-contain opacity-10" />
-          </div>
-          <div className="relative">{children}</div>
-        </div>
+        <div className="flex w-full flex-col justify-center px-8 py-10 sm:px-12 md:w-1/2">{children}</div>
       </div>
     </main>
   );
