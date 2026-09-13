@@ -19,9 +19,12 @@ const mockUser: User = {
   role: "EMPLOYEE",
   check_number: "CN1",
   personnel_file_number: "PF1",
-  department: "IT",
-  station: "HQ",
-  designation: "Officer",
+  department: 1,
+  department_name: "IT",
+  work_station: 1,
+  work_station_name: "HQ",
+  designation: 1,
+  designation_name: "Officer",
   is_active: true,
 };
 

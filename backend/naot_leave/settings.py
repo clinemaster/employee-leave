@@ -199,6 +199,13 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
     'SCHEMA_PATH_PREFIX': '/api/',
+    # UserWriteSerializer.additional_roles (a ListField of Role choices) and
+    # User.role both reuse apps.accounts.models.Role's choices, so
+    # drf-spectacular infers two different enum component names for the same
+    # underlying choice set — pin the name so the schema doesn't warn.
+    'ENUM_NAME_OVERRIDES': {
+        'AdditionalRolesEnum': 'apps.accounts.models.Role',
+    },
 }
 
 SIMPLE_JWT = {

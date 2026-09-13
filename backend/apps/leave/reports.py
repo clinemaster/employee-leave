@@ -1,6 +1,6 @@
 """
 Reporting / export endpoints (spec section 35): leave applications filtered
-by date/department/station/leave-type/status, exportable as CSV, Excel or
+by date/department/work station/leave-type/status, exportable as CSV, Excel or
 PDF.
 
 Restricted to roles with organization-wide visibility (HR_ADMIN,
@@ -30,7 +30,7 @@ REPORT_COLUMNS = [
     ('employee__department__name', 'Department'),
     ('employee__section__name', 'Section'),
     ('employee__unit__name', 'Unit'),
-    ('employee__station__name', 'Station'),
+    ('employee__work_station__name', 'Work Station'),
     ('leave_type__name', 'Leave Type'),
     ('status', 'Status'),
     ('start_date', 'Start Date'),
@@ -49,7 +49,7 @@ class IsReportingRole(IsAuthenticatedAndRole):
 def _filtered_queryset(params):
     qs = LeaveApplication.objects.select_related(
         'employee', 'employee__department', 'employee__section',
-        'employee__unit', 'employee__station', 'leave_type',
+        'employee__unit', 'employee__work_station', 'leave_type',
     )
 
     start_date = params.get('start_date')
@@ -63,9 +63,9 @@ def _filtered_queryset(params):
     if department:
         qs = qs.filter(employee__department_id=department)
 
-    station = params.get('station')
-    if station:
-        qs = qs.filter(employee__station_id=station)
+    work_station = params.get('work_station')
+    if work_station:
+        qs = qs.filter(employee__work_station_id=work_station)
 
     leave_type = params.get('leave_type')
     if leave_type:
@@ -113,7 +113,7 @@ class _IgnoreFormatSuffixNegotiation(DefaultContentNegotiation):
 class LeaveApplicationReportView(APIView):
     """
     GET /api/reports/leave-applications/?format=csv|xlsx
-        &start_date=&end_date=&department=&station=&leave_type=&status=&employee=
+        &start_date=&end_date=&department=&work_station=&leave_type=&status=&employee=
 
     Streams a CSV or Excel (.xlsx) export of leave applications matching the
     given filters. Defaults to CSV if `format` is omitted.
@@ -132,7 +132,7 @@ class LeaveApplicationReportView(APIView):
             OpenApiParameter('start_date', OpenApiTypes.DATE, description='Filter: submitted/start date >= this'),
             OpenApiParameter('end_date', OpenApiTypes.DATE, description='Filter: submitted/start date <= this'),
             OpenApiParameter('department', OpenApiTypes.INT, description='Filter by employee department id'),
-            OpenApiParameter('station', OpenApiTypes.INT, description='Filter by employee station id'),
+            OpenApiParameter('work_station', OpenApiTypes.INT, description='Filter by employee work station id'),
             OpenApiParameter('leave_type', OpenApiTypes.INT, description='Filter by leave type id'),
             OpenApiParameter('status', OpenApiTypes.STR, description='Filter by application status'),
             OpenApiParameter('employee', OpenApiTypes.INT, description='Filter by employee id'),

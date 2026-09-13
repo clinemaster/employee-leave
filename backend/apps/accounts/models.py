@@ -5,11 +5,18 @@ from django.db import models
 class Role(models.TextChoices):
     EMPLOYEE = 'EMPLOYEE', 'Employee'
     HEAD_OF_DEPARTMENT = 'HEAD_OF_DEPARTMENT', 'Head of Department'
+    HEAD_OF_DIVISION = 'HEAD_OF_DIVISION', 'Head of Division'
+    HEAD_OF_SUPPORT_DIVISION = 'HEAD_OF_SUPPORT_DIVISION', 'Head of Support Division'
     HEAD_OF_SECTION = 'HEAD_OF_SECTION', 'Head of Section'
     HEAD_OF_UNIT = 'HEAD_OF_UNIT', 'Head of Unit'
     HR_ADMIN = 'HR_ADMIN', 'HR Admin'
     AUTHORIZING_OFFICER = 'AUTHORIZING_OFFICER', 'Authorizing Officer'
     SYSTEM_ADMIN = 'SYSTEM_ADMIN', 'System Admin'
+
+# Roles exempt from the "belongs to exactly one of department/division/
+# support_division" rule -- these are organization-wide, not tied to a
+# single org unit.
+ORG_UNIT_EXEMPT_ROLES = {Role.SYSTEM_ADMIN, Role.HR_ADMIN, Role.AUTHORIZING_OFFICER}
 
 
 class User(AbstractUser):
@@ -25,14 +32,25 @@ class User(AbstractUser):
     full_name = models.CharField(max_length=255)
     check_number = models.CharField(max_length=32, unique=True, db_index=True)
     personnel_file_number = models.CharField(max_length=64, blank=True)
-    designation = models.CharField(max_length=255, blank=True)
+    designation = models.ForeignKey(
+        'organization.Designation', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employees',
+    )
 
-    station = models.ForeignKey(
-        'organization.Station', on_delete=models.SET_NULL, null=True, blank=True,
+    work_station = models.ForeignKey(
+        'organization.WorkStation', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='employees',
     )
     department = models.ForeignKey(
         'organization.Department', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employees',
+    )
+    division = models.ForeignKey(
+        'organization.Division', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='employees',
+    )
+    support_division = models.ForeignKey(
+        'organization.SupportDivision', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='employees',
     )
     section = models.ForeignKey(
@@ -76,3 +94,37 @@ class User(AbstractUser):
 
     def __str__(self):
         return f'{self.full_name or self.username} ({self.check_number})'
+
+    def has_role(self, role):
+        """
+        True if the user holds `role` either as their base `role` or as one
+        of their additional_roles — every user is EMPLOYEE by default (the
+        base role's own default), and may additionally be assigned e.g.
+        HEAD_OF_DEPARTMENT to review applications without losing the ability
+        to submit their own as an employee.
+        """
+        return self.role == role or self.additional_roles.filter(role=role).exists()
+
+    @property
+    def all_roles(self):
+        """The full set of roles this user holds (base + additional)."""
+        return {self.role} | set(self.additional_roles.values_list('role', flat=True))
+
+
+class UserAdditionalRole(models.Model):
+    """
+    A role held by a user in addition to their base `role` (e.g. an EMPLOYEE
+    also designated HEAD_OF_DEPARTMENT to review their department's leave
+    applications). See User.has_role / User.all_roles.
+    """
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='additional_roles')
+    role = models.CharField(max_length=32, choices=Role.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'role'], name='uniq_user_additional_role')
+        ]
+
+    def __str__(self):
+        return f'{self.user} + {self.role}'

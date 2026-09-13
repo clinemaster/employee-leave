@@ -77,7 +77,11 @@ def find_matching_policy(employee, leave_type, as_of=None):
     from .models import LeavePolicy
 
     tenure_years = years_of_service(employee, as_of=as_of)
-    designation = getattr(employee, 'designation', None)
+    # employee.designation is now a FK to organization.Designation (was a
+    # free-text field) — LeavePolicy.designation stays free text and is
+    # matched case-insensitively against the designation's *name*.
+    designation_obj = getattr(employee, 'designation', None)
+    designation = designation_obj.name if designation_obj else None
     policies = LeavePolicy.objects.filter(
         leave_type=leave_type, is_active=True
     ).order_by('sort_order', 'id')

@@ -40,6 +40,7 @@ export function LeaveBalances({ employeeId, title = "Leave Balances" }: { employ
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead>
             <tr className="text-left text-gray-500">
+              <th className="py-2 pr-4 font-medium">S/No</th>
               <th className="py-2 pr-4 font-medium">Leave Type</th>
               <th className="py-2 pr-4 font-medium">Period</th>
               <th className="py-2 pr-4 font-medium">Balance (days)</th>
@@ -47,8 +48,9 @@ export function LeaveBalances({ employeeId, title = "Leave Balances" }: { employ
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {balances.map((b) => (
+            {balances.map((b, index) => (
               <tr key={b.id}>
+                <td className="py-2 pr-4">{index + 1}</td>
                 <td className="py-2 pr-4">{leaveTypeName(b.leave_type)}</td>
                 <td className="py-2 pr-4">{b.period}</td>
                 <td className="py-2 pr-4 font-medium">{b.balance_days ?? b.remaining}</td>

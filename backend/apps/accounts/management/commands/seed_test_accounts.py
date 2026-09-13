@@ -13,7 +13,7 @@ from django.db import transaction
 
 from apps.accounts.models import Role, User
 from apps.leave.models import LeaveType
-from apps.organization.models import Department, Section, Station, Unit
+from apps.organization.models import Department, Designation, Section, Unit, WorkStation
 
 TEST_PASSWORD = 'TestPass123!'
 
@@ -35,8 +35,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         with transaction.atomic():
-            station, _ = Station.objects.get_or_create(
+            work_station, _ = WorkStation.objects.get_or_create(
                 code='HQ', defaults={'name': 'Head Office'}
+            )
+            designation, _ = Designation.objects.get_or_create(
+                code='OFFICER', defaults={'name': 'Officer'}
             )
             department, _ = Department.objects.get_or_create(
                 code='IT', defaults={'name': 'Information Technology'}
@@ -71,7 +74,8 @@ class Command(BaseCommand):
                         'department': department,
                         'section': section,
                         'unit': unit,
-                        'station': station,
+                        'work_station': work_station,
+                        'designation': designation,
                         'date_of_first_appointment': date(2020, 1, 1),
                         **extra,
                     },

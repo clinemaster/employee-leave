@@ -51,22 +51,65 @@ Returns the current authenticated user's profile (`UserSerializer`).
 
 `GET|POST /api/users/`, `GET|PUT|PATCH|DELETE /api/users/{id}/`
 
-`UserSerializer` fields: `id, username, full_name, email, official_email, role,
-check_number, personnel_file_number, designation, station, department,
-section, unit, manager, phone_number, date_of_first_appointment, is_active`.
+`UserSerializer` (read) fields: `id, username, full_name, email,
+official_email, role, additional_roles, check_number,
+personnel_file_number, designation, designation_name, work_station,
+work_station_name, department, department_name, division, division_name,
+support_division, support_division_name, section, section_name, unit,
+unit_name, manager, phone_number, date_of_first_appointment, is_active,
+mfa_enabled`. `UserWriteSerializer` (create/update) accepts the same FK id
+fields plus `password` and `additional_roles`, but not the `*_name`
+companions (read-only, derived from the FK).
 
-`role` choices: `EMPLOYEE, HEAD_OF_DEPARTMENT, HEAD_OF_SECTION, HEAD_OF_UNIT,
-HR_ADMIN, AUTHORIZING_OFFICER, SYSTEM_ADMIN`.
+`designation` and `work_station` are FKs to `organization.Designation` /
+`organization.WorkStation` (both simple `{id, name, code, is_active}`
+lookups, `WorkStation` additionally has `address`) — not free text.
 
-`manager` is the FK used for HOD routing (an employee's `manager` is the HOD
-whose queue their applications land in).
+`role` choices: `EMPLOYEE, HEAD_OF_DEPARTMENT, HEAD_OF_DIVISION,
+HEAD_OF_SUPPORT_DIVISION, HEAD_OF_SECTION, HEAD_OF_UNIT, HR_ADMIN,
+AUTHORIZING_OFFICER, SYSTEM_ADMIN`.
+
+Every user is `EMPLOYEE` by default and may additionally hold one or more
+roles beyond their base `role` — e.g. an `EMPLOYEE` also designated
+`HEAD_OF_DEPARTMENT` to review their department's leave applications without
+losing the ability to submit their own. `additional_roles` (read: array of
+role codes; write: same, fully replacing the set on each write, not merged)
+is the mechanism — see `apps.accounts.models.User.has_role`/`all_roles`.
+Every role-gated permission check in the API (`is_hod`, `is_hr_admin`,
+`is_authorizing_officer`, `is_system_admin`, `IsSystemAdmin`, etc.) treats
+`role` and `additional_roles` as one combined set.
+
+**Org-unit assignment**: every user belongs to exactly one of `department`,
+`division`, or `support_division` (validated server-side on write) — except
+`SYSTEM_ADMIN`, `HR_ADMIN`, and `AUTHORIZING_OFFICER`, which are
+organization-wide roles exempt from that rule. A `400`
+`{"non_field_errors": ["A user must belong to exactly one of department,
+division or support division."]}` is returned otherwise.
+
+`manager` is a legacy routing FK still honored as a fallback for
+Section/Unit-level HOD routing (see "Section B1 routing" under Leave
+Applications below) — new Department/Division/Support-Division routing no
+longer requires it.
 
 ## Organization (read: any authenticated user; write: SYSTEM_ADMIN)
 
+Department, Division, and Support Division are parallel top-level org units
+— an employee/head belongs to exactly one of them (see "Org-unit assignment"
+above). All support soft-delete (`DELETE` sets `deleted_at`/`is_active` off
+rather than removing the row, so existing employee references aren't
+orphaned) and inline edit via `PATCH`.
+
 - `GET|POST /api/departments/`, `.../{id}/` — `{id, name, code, is_active}`
+- `GET|POST /api/divisions/`, `.../{id}/` — `{id, name, code, is_active}`
+- `GET|POST /api/support-divisions/`, `.../{id}/` — `{id, name, code, is_active}`
+- `GET|POST /api/designations/`, `.../{id}/` — `{id, name, code, is_active}`
+  — a job title/grade a user may hold (e.g. "Auditor General"); matched by
+  `LeavePolicy.designation` (free text, case-insensitive) against this
+  record's `name` — see "Leave Policies" below.
 - `GET|POST /api/sections/`, `.../{id}/` — `{id, name, code, department, is_active}`
 - `GET|POST /api/units/`, `.../{id}/` — `{id, name, code, section, is_active}`
-- `GET|POST /api/stations/`, `.../{id}/` — `{id, name, code, address, is_active}`
+- `GET|POST /api/work-stations/`, `.../{id}/` — `{id, name, code, address, is_active}`
+  (renamed from `/api/stations/` — every user belongs to one via `work_station`)
 
 ## Leave types & holidays (read: any; write: SYSTEM_ADMIN)
 
@@ -205,8 +248,10 @@ is_active, sort_order, description, created_at, updated_at`.
 
 Admin-configurable rules that drive the entitlement engine (spec section 9's
 "leave types are configurable" requirement): each rule maps a `leave_type` +
-optional `designation` (job grade/title, matched case-insensitively/exactly
-against `accounts.User.designation`; blank applies to all designations) +
+optional `designation` (free-text job grade/title, matched
+case-insensitively against the employee's `designation.name` — see
+`organization.Designation` under "Organization" above; blank applies to all
+designations) +
 optional tenure band (`min_years_of_service`/`max_years_of_service`,
 inclusive; leave both blank for a flat rule that applies regardless of
 tenure) to an `annual_entitlement` in days. For a given employee +
@@ -269,9 +314,29 @@ from `LeaveApplication` history.
 Base: `/api/leave-applications/`
 
 Row-level access (IDOR protection) — a user only ever sees applications
-where: they are the applicant, OR (if HOD/HOS/HOU) the applicant's
-`manager` is them, OR they hold HR_ADMIN/AUTHORIZING_OFFICER/SYSTEM_ADMIN
-(org-wide visibility). Fetching an application outside this set returns 404.
+where: they are the applicant, OR they are the routed reviewer for it (see
+"Section B1 routing" below), OR they hold
+HR_ADMIN/AUTHORIZING_OFFICER/SYSTEM_ADMIN (org-wide visibility). Fetching an
+application outside this set returns 404.
+
+### Section B1 routing
+
+The reviewer for Section B1 (`recommend`/`return`/`resubmit-to-hr`) is
+resolved in this order (`apps.leave.permissions`):
+
+1. **Matched head** (`matched_head_for`) — the active user holding
+   `HEAD_OF_DEPARTMENT`/`HEAD_OF_DIVISION`/`HEAD_OF_SUPPORT_DIVISION` whose
+   org unit matches the employee's own `department`/`division`/
+   `support_division` (role membership includes `additional_roles`, not
+   just the base `role`).
+2. **Legacy `manager`** — if no matched head exists, the employee's
+   manually-assigned `manager` FK (still used for Section/Unit-level HOD
+   routing, which isn't derived automatically).
+3. **Fallback** (`fallback_reviewer_for`) — if neither of the above exists
+   (a vacant post with no manager set either), routes to an active
+   `HR_ADMIN`, then an active `AUTHORIZING_OFFICER`, rather than leaving the
+   application permanently stuck. `/submit/` itself is rejected with `400`
+   only if *no* reviewer can be found at all (not even a fallback).
 
 ### GET /api/leave-applications/
 List, filtered to the above. Query params: `?status=&leave_type=&employee=`.
@@ -313,13 +378,13 @@ Sending a field outside your authorized section returns
 | Endpoint | Allowed from status | Allowed role | Effect |
 |---|---|---|---|
 | `.../submit/` | DRAFT, RETURNED_TO_EMPLOYEE | applicant | -> PENDING_HOD_REVIEW |
-| `.../recommend/` | PENDING_HOD_REVIEW | routed HOD/HOS/HOU | writes Section B1 (`recommendation`), -> HOD_RECOMMENDED -> (auto) PENDING_HR_REVIEW |
-| `.../return/` | PENDING_HOD_REVIEW | routed HOD/HOS/HOU | -> RETURNED_TO_EMPLOYEE |
+| `.../recommend/` | PENDING_HOD_REVIEW | routed reviewer (see "Section B1 routing") | writes Section B1 (`recommendation`), -> HOD_RECOMMENDED -> (auto) PENDING_HR_REVIEW |
+| `.../return/` | PENDING_HOD_REVIEW | routed reviewer (see "Section B1 routing") | -> RETURNED_TO_EMPLOYEE |
 | `.../verify/` | PENDING_HR_REVIEW | HR_ADMIN | writes Section B2 (`hr_review`), -> HR_VERIFIED -> (auto) PENDING_AUTHORIZATION |
 | `.../approve/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=true), -> APPROVED |
 | `.../deny/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=false), -> DENIED |
 | `.../generate-pdf/` | APPROVED | applicant, HR_ADMIN, AUTHORIZING_OFFICER | renders 2- or 3-page PDF (3rd page only if travel payment data exists), stores `LeaveDocument`, -> PDF_GENERATED |
-| `.../resubmit-to-hr/` | RETURNED_TO_HOD | routed HOD/HOS/HOU | HOD resubmits after correcting Section B1, -> PENDING_HR_REVIEW |
+| `.../resubmit-to-hr/` | RETURNED_TO_HOD | routed reviewer (see "Section B1 routing") | HOD resubmits after correcting Section B1, -> PENDING_HR_REVIEW |
 | `.../complete/` | PDF_GENERATED | HR_ADMIN, AUTHORIZING_OFFICER | -> COMPLETED (terminal, successful) |
 | `.../archive/` | DENIED, COMPLETED | HR_ADMIN | -> ARCHIVED (terminal, housekeeping) |
 
@@ -332,6 +397,14 @@ relevant user(s) — see `apps/leave/workflow.py`.
 Invalid transitions (wrong status, wrong role/routing) return
 `400`/`403` and nothing is written (whole transition runs in one DB
 transaction).
+
+`generate-pdf` only fires the `APPROVED -> PDF_GENERATED` transition once —
+whoever (applicant, HR_ADMIN, or AUTHORIZING_OFFICER) calls it first
+generates the document; a second call by anyone else after that fails with
+`400` (wrong status). Everyone else who's allowed to view the application
+fetches the already-generated file via `GET .../documents/` +
+`GET .../documents/{document_id}/download/` instead of calling
+`generate-pdf` again.
 
 ### GET /api/leave-applications/{id}/documents/
 Returns `[{id, application, document_type, file, generated_by, is_active,
@@ -379,8 +452,11 @@ Shape depends on the caller's role:
   applications only. `pending` bundles every in-flight status
   (`PENDING_HOD_REVIEW` … `PENDING_AUTHORIZATION`); `approved` bundles
   `APPROVED`/`PDF_GENERATED`/`COMPLETED`.
-- **HOD/HOS/HOU**: `{pending_recommendation, recommended, returned,
-  completed}` — applications routed to this HOD (`employee__manager=you`).
+- **HOD/HOS/HOU** (any role in `HOD_ROLES`, base or additional): `{pending_recommendation,
+  recommended, returned, completed}` — applications from employees this head
+  reviews: those whose department/division/support_division matches the
+  head's own (role-derived, see "Section B1 routing"), plus legacy
+  manager-routed employees (`apps.leave.permissions.hod_scope_q`).
 - **HR_ADMIN**: `{pending_verification, verified, returned, approved,
   denied}` — org-wide.
 - **AUTHORIZING_OFFICER**: `{pending_authorization, approved, denied,
@@ -388,7 +464,7 @@ Shape depends on the caller's role:
 - **SYSTEM_ADMIN**: `{draft, in_progress, approved, denied, archived,
   total_applications, applications_by_leave_type: [{leave_type, count}],
   applications_by_department: [{department, count}],
-  applications_by_station: [{station, count}],
+  applications_by_work_station: [{work_station, count}],
   average_processing_time_hours}` — org-wide aggregates.
   `average_processing_time_hours` is the mean `updated_at - submitted_at`
   (hours) across applications that reached a terminal status
@@ -405,7 +481,7 @@ Streams a CSV, Excel (`.xlsx`, via `openpyxl`) or PDF (via `reportlab`)
 export of leave applications.
 
 - `csv`/`xlsx`: one row per application — application number, employee,
-  check number, department, section, unit, station, leave type, status,
+  check number, department, section, unit, work station, leave type, status,
   start/last date, working days, submitted/created/updated timestamps.
 - `pdf`: a landscape A4 tabular report — title, the applied filters (as
   `key=value` pairs, or "None"), a generation timestamp, then one row per
@@ -415,8 +491,8 @@ export of leave applications.
   applications." message instead of a table.
 
 Query filters (all optional, combinable): `start_date` (`start_date>=`),
-`end_date` (`last_date<=`), `department`, `station`, `leave_type`, `status`,
-`employee` (all four as id). `format` defaults to `csv`.
+`end_date` (`last_date<=`), `department`, `work_station`, `leave_type`,
+`status`, `employee` (all as id). `format` defaults to `csv`.
 
 Note: `format` here is our own filter, not DRF's URL-format-suffix
 convention — the view pins `content_negotiation_class` to ignore the

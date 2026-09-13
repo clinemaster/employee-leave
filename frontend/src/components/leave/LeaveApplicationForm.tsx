@@ -26,6 +26,7 @@ import {
   mizigoItemSchema,
 } from "@/lib/validation/leaveApplication";
 import type { TravelPaymentFormValues } from "@/lib/validation/leaveApplication";
+import { orgUnitName } from "@/types";
 
 // Section A fields, per /API.md. `vote_code`/`sub_vote`/`check_number`/
 // `personnel_file`/`full_name`/`designation`/`station`/`division_department`
@@ -46,7 +47,6 @@ const formSchema = z
     // same-type value that fails a later refinement) — `.refine()` ensures
     // the intended message always fires for the unselected/zero case.
     leave_type: z.number().refine((val) => val > 0, { message: "Select a leave type" }),
-    leave_number: z.string().optional(),
     start_date: z.string().min(1, "Start date is required"),
     last_date: z.string().min(1, "End date is required"),
     travel_assistance: z.boolean(),
@@ -69,7 +69,7 @@ const STEPS = [
   "Personal Info",
   "Leave Request",
   "Dependants",
-  "Travel Payment Request",
+  "Travel Route Payment Request",
   "Review & Submit",
 ] as const;
 
@@ -94,7 +94,6 @@ export function LeaveApplicationForm() {
     resolver: zodResolver(formSchema),
     defaultValues: {
       leave_type: 0,
-      leave_number: "",
       start_date: "",
       last_date: "",
       travel_assistance: false,
@@ -111,6 +110,7 @@ export function LeaveApplicationForm() {
   const { fields, append, remove } = useFieldArray({ control, name: "dependants" });
   const startDate = watch("start_date");
   const lastDate = watch("last_date");
+  const travelAssistance = watch("travel_assistance");
   const clientPreviewDays = useMemo(() => previewWeekdayCount(startDate, lastDate), [startDate, lastDate]);
 
   async function goNext() {
@@ -126,11 +126,21 @@ export function LeaveApplicationForm() {
       if (step === 1 && startDate && lastDate) {
         previewWorkingDays({ start_date: startDate, last_date: lastDate });
       }
+      // No travel assistance -> Dependants and Travel Payment Request don't
+      // apply, so skip straight from Leave Request to Review & Submit.
+      if (step === 1 && !travelAssistance) {
+        setStep(STEPS.length - 1);
+        return;
+      }
       setStep((s) => Math.min(s + 1, STEPS.length - 1));
     }
   }
 
   function goBack() {
+    if (step === STEPS.length - 1 && !travelAssistance) {
+      setStep(1);
+      return;
+    }
     setStep((s) => Math.max(s - 1, 0));
   }
 
@@ -141,14 +151,13 @@ export function LeaveApplicationForm() {
       check_number: user?.check_number ?? undefined,
       personnel_file: user?.personnel_file_number ?? undefined,
       full_name: user?.full_name ?? "",
-      designation: user?.designation ?? "",
-      station: user?.station ?? "",
-      division_department: user?.department ?? "",
+      designation: user?.designation_name ?? "",
+      station: user?.work_station_name ?? "",
+      division_department: orgUnitName(user) ?? "",
       phone_number: values.phone_number,
       email: values.email,
       contact_address: values.contact_address,
       leave_type: values.leave_type,
-      leave_number: values.leave_number,
       travel_assistance: values.travel_assistance,
       start_date: values.start_date,
       last_date: values.last_date,
@@ -209,9 +218,9 @@ export function LeaveApplicationForm() {
               <ReadOnlyField label="Full Name" value={user?.full_name} />
               <ReadOnlyField label="Check Number" value={user?.check_number} />
               <ReadOnlyField label="Personnel File Number" value={user?.personnel_file_number} />
-              <ReadOnlyField label="Department" value={user?.department} />
-              <ReadOnlyField label="Station" value={user?.station} />
-              <ReadOnlyField label="Designation" value={user?.designation} />
+              <ReadOnlyField label="Department" value={orgUnitName(user)} />
+              <ReadOnlyField label="Work Station" value={user?.work_station_name} />
+              <ReadOnlyField label="Designation" value={user?.designation_name} />
             </div>
           </div>
         )}
@@ -269,10 +278,6 @@ export function LeaveApplicationForm() {
                 <Label htmlFor="phone_number">Contact Phone</Label>
                 <Input id="phone_number" {...register("phone_number")} />
               </div>
-            </div>
-            <div>
-              <Label htmlFor="leave_number">Leave Number (if known)</Label>
-              <Input id="leave_number" {...register("leave_number")} />
             </div>
           </div>
         )}

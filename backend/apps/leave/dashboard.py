@@ -15,7 +15,7 @@ from rest_framework.views import APIView
 from .models import ApplicationStatus as S
 from .models import LeaveApplication
 from .permissions import (
-    is_authorizing_officer, is_hod, is_hr_admin, is_system_admin,
+    hod_scope_q, is_authorizing_officer, is_hod, is_hr_admin, is_system_admin,
 )
 
 
@@ -75,7 +75,7 @@ class DashboardStatsView(APIView):
         })
 
     def _hod_stats(self, user):
-        qs = LeaveApplication.objects.filter(employee__manager=user)
+        qs = LeaveApplication.objects.filter(hod_scope_q(user))
         return _counts(qs, {
             'pending_recommendation': S.PENDING_HOD_REVIEW,
             'recommended': (S.HOD_RECOMMENDED, S.PENDING_HR_REVIEW, S.RETURNED_TO_HOD),
@@ -125,8 +125,8 @@ class DashboardStatsView(APIView):
             .annotate(count=Count('id'))
             .order_by('-count')
         )
-        by_station = list(
-            qs.values('employee__station__name')
+        by_work_station = list(
+            qs.values('employee__work_station__name')
             .annotate(count=Count('id'))
             .order_by('-count')
         )
@@ -152,8 +152,9 @@ class DashboardStatsView(APIView):
             'applications_by_department': [
                 {'department': row['employee__department__name'], 'count': row['count']} for row in by_department
             ],
-            'applications_by_station': [
-                {'station': row['employee__station__name'], 'count': row['count']} for row in by_station
+            'applications_by_work_station': [
+                {'work_station': row['employee__work_station__name'], 'count': row['count']}
+                for row in by_work_station
             ],
             'average_processing_time_hours': avg_processing_hours,
         })

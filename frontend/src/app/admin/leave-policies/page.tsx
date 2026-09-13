@@ -227,6 +227,7 @@ export default function AdminLeavePoliciesPage() {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead>
               <tr className="text-left text-gray-500">
+                <th className="py-2 pr-4">S/No</th>
                 <th className="py-2 pr-4">Leave Type</th>
                 <th className="py-2 pr-4">Designation</th>
                 <th className="py-2 pr-4">Tenure Band (years)</th>
@@ -237,8 +238,9 @@ export default function AdminLeavePoliciesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {sorted.map((p) => (
+              {sorted.map((p, index) => (
                 <tr key={p.id}>
+                  <td className="py-2 pr-4">{index + 1}</td>
                   <td className="py-2 pr-4">{p.leave_type_name ?? leaveTypeName(p.leave_type)}</td>
                   <td className="py-2 pr-4">{p.designation ? p.designation : "All"}</td>
                   <td className="py-2 pr-4">

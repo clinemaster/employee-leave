@@ -64,7 +64,10 @@ class UserViewSet(viewsets.ModelViewSet):
     /api/users/me/ — any authenticated user reads their own profile.
     """
     queryset = User.objects.filter(deleted_at__isnull=True)
-    filterset_fields = ['role', 'department', 'section', 'unit', 'station', 'is_active']
+    filterset_fields = [
+        'role', 'department', 'division', 'support_division', 'section', 'unit',
+        'work_station', 'designation', 'is_active',
+    ]
     search_fields = ['full_name', 'username', 'check_number', 'email']
 
     def get_serializer_class(self):

@@ -11,7 +11,7 @@ import pytest
 
 
 @pytest.mark.django_db
-def test_sysadmin_can_create_user_with_check_number_and_no_password(as_user, sysadmin_user):
+def test_sysadmin_can_create_user_with_check_number_and_no_password(as_user, sysadmin_user, department):
     client = as_user(sysadmin_user)
     response = client.post('/api/users/', {
         'username': 'newhire',
@@ -19,6 +19,7 @@ def test_sysadmin_can_create_user_with_check_number_and_no_password(as_user, sys
         'check_number': 'NH-001',
         'email': 'newhire@naot.go.tz',
         'role': 'EMPLOYEE',
+        'department': department.id,
     }, format='json')
     assert response.status_code == 201, response.data
     assert response.data['check_number'] == 'NH-001'
@@ -29,7 +30,7 @@ def test_sysadmin_can_create_user_with_check_number_and_no_password(as_user, sys
 
 
 @pytest.mark.django_db
-def test_sysadmin_can_create_user_with_explicit_password(as_user, sysadmin_user):
+def test_sysadmin_can_create_user_with_explicit_password(as_user, sysadmin_user, department):
     client = as_user(sysadmin_user)
     response = client.post('/api/users/', {
         'username': 'newhire2',
@@ -38,6 +39,7 @@ def test_sysadmin_can_create_user_with_explicit_password(as_user, sysadmin_user)
         'email': 'newhire2@naot.go.tz',
         'role': 'EMPLOYEE',
         'password': 'TempPass123!',
+        'department': department.id,
     }, format='json')
     assert response.status_code == 201, response.data
 

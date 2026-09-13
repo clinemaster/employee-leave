@@ -26,7 +26,7 @@ export interface DashboardStats {
   total_applications?: number;
   applications_by_leave_type?: { leave_type: string; count: number }[];
   applications_by_department?: { department: string; count: number }[];
-  applications_by_station?: { station: string; count: number }[];
+  applications_by_work_station?: { work_station: string; count: number }[];
   average_processing_time_hours?: number | null;
 }
 

@@ -76,7 +76,7 @@ export function TravelPaymentStep({ control, register, watch }: StepProps) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-base font-semibold text-gray-900">Travel Payment Request</h2>
+      <h2 className="text-base font-semibold text-gray-900">Travel Route Payment Request</h2>
       <p className="text-xs text-gray-500">
         JEDWALI 1: MCHANGANUO WA MAOMBI YA MALIPO — fare (NAULI), taxi, and luggage (MIZIGO)
         expenses. Totals are computed automatically; enter Idadi (count), fares, and costs only.

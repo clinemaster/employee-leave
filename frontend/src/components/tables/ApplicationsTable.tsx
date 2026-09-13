@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/ui/Badge";
+import { DownloadPdfButton, isPdfDownloadable } from "@/components/leave/DownloadPdfButton";
 import type { LeaveApplication } from "@/types";
 
 interface PaginationProps {
@@ -31,16 +32,21 @@ export function ApplicationsTable({
         <table className="min-w-full divide-y divide-gray-200 text-sm">
           <thead>
             <tr className="text-left text-gray-500">
+              <th className="py-2 pr-4 font-medium">S/No</th>
               <th className="py-2 pr-4 font-medium">Applicant</th>
               <th className="py-2 pr-4 font-medium">Leave Type</th>
               <th className="py-2 pr-4 font-medium">Dates</th>
               <th className="py-2 pr-4 font-medium">Days</th>
               <th className="py-2 pr-4 font-medium">Status</th>
+              <th className="py-2 pr-4 font-medium">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {items.map((item) => (
+            {items.map((item, index) => (
               <tr key={item.id} className="hover:bg-gray-50">
+                <td className="py-2 pr-4">
+                  {pagination ? (pagination.page - 1) * pageSize + index + 1 : index + 1}
+                </td>
                 <td className="py-2 pr-4">
                   <Link href={`${detailBasePath}/${item.id}`} className="text-blue-600 hover:underline">
                     {item.full_name}
@@ -53,6 +59,13 @@ export function ApplicationsTable({
                 <td className="py-2 pr-4">{item.total_working_days ?? item.working_days_preview ?? "-"}</td>
                 <td className="py-2 pr-4">
                   <StatusBadge status={item.status} />
+                </td>
+                <td className="py-2 pr-4">
+                  {isPdfDownloadable(item.status) ? (
+                    <DownloadPdfButton applicationId={item.id} status={item.status} />
+                  ) : (
+                    <span className="text-gray-400">&mdash;</span>
+                  )}
                 </td>
               </tr>
             ))}

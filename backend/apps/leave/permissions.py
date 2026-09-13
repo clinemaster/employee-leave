@@ -8,7 +8,9 @@ re-verified independently of anything the client sends.
 Role -> access matrix (spec):
   EMPLOYEE              create/edit own DRAFT applications, edit Section A only, submit.
   HOD (*)               read-only Section A, edit Section B1 only, only on applications
-                         routed to them (i.e. applicant.manager == them).
+                         routed to them: matched by department/division/support_division
+                         (see matched_head_for), else legacy manager-based routing, else
+                         (vacant post) a fallback HR Admin/Authorizing Officer.
   HR_ADMIN               read-only A+B1, edit Section B2 only.
   AUTHORIZING_OFFICER    read-only A+B1+B2, edit Section C only.
   SYSTEM_ADMIN            manage leave types, holidays, org units, users (not the
@@ -19,7 +21,18 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.accounts.models import Role
 
-HOD_ROLES = {Role.HEAD_OF_DEPARTMENT, Role.HEAD_OF_SECTION, Role.HEAD_OF_UNIT}
+HOD_ROLES = {
+    Role.HEAD_OF_DEPARTMENT, Role.HEAD_OF_DIVISION, Role.HEAD_OF_SUPPORT_DIVISION,
+    Role.HEAD_OF_SECTION, Role.HEAD_OF_UNIT,
+}
+
+# For each org-unit field an employee may belong to, the role that reviews
+# their leave applications and the matching FK on the reviewing user.
+_ORG_UNIT_HEAD_ROLES = (
+    ('department_id', Role.HEAD_OF_DEPARTMENT, 'department_id'),
+    ('division_id', Role.HEAD_OF_DIVISION, 'division_id'),
+    ('support_division_id', Role.HEAD_OF_SUPPORT_DIVISION, 'support_division_id'),
+)
 
 # Fields that belong to each section of the paper form. Used to reject
 # unauthorized field edits regardless of what the frontend sends.
@@ -36,29 +49,87 @@ SECTION_C_FIELDS = {'approval'}  # LeaveApproval nested writable fields
 
 
 def is_hod(user):
-    return user.is_authenticated and user.role in HOD_ROLES
+    return user.is_authenticated and any(user.has_role(r) for r in HOD_ROLES)
 
 
 def is_hr_admin(user):
-    return user.is_authenticated and user.role == Role.HR_ADMIN
+    return user.is_authenticated and user.has_role(Role.HR_ADMIN)
 
 
 def is_authorizing_officer(user):
-    return user.is_authenticated and user.role == Role.AUTHORIZING_OFFICER
+    return user.is_authenticated and user.has_role(Role.AUTHORIZING_OFFICER)
 
 
 def is_system_admin(user):
-    return user.is_authenticated and (user.role == Role.SYSTEM_ADMIN or user.is_superuser)
+    return user.is_authenticated and (user.has_role(Role.SYSTEM_ADMIN) or user.is_superuser)
 
 
 def is_employee_role(user):
-    return user.is_authenticated and user.role == Role.EMPLOYEE
+    return user.is_authenticated and user.has_role(Role.EMPLOYEE)
+
+
+def matched_head_for(employee):
+    """
+    The Head of Department/Division/Support Division whose org unit matches
+    the employee's, found by role rather than by manual assignment (an
+    employee belongs to exactly one of department/division/support_division —
+    see accounts.serializers._validate_single_org_unit). Returns None if that
+    org unit currently has no one holding the matching head role (vacant post).
+    """
+    from django.db.models import Q
+
+    from apps.accounts.models import User
+
+    for employee_field, head_role, head_field in _ORG_UNIT_HEAD_ROLES:
+        org_unit_id = getattr(employee, employee_field)
+        if org_unit_id is None:
+            continue
+        return User.objects.filter(
+            Q(role=head_role) | Q(additional_roles__role=head_role),
+            is_active=True, **{head_field: org_unit_id},
+        ).distinct().order_by('id').first()
+    return None
 
 
 def routed_hod_for(application):
-    """The HOD/HOS/HOU who should review this application: the employee's manager."""
+    """
+    The reviewer for Section B1 of this application: the head of the
+    employee's department/division/support_division (matched_head_for), or —
+    for legacy Section/Unit-level routing not covered by that match — the
+    employee's manually-assigned `manager`.
+    """
     employee = application.employee
+    head = matched_head_for(employee)
+    if head is not None:
+        return head
     return getattr(employee, 'manager', None)
+
+
+def fallback_reviewer_for(application):
+    """
+    Organization-wide fallback reviewer used only when the employee's
+    department/division/support_division has no one in the matching head
+    role and no manager is set either (vacant post) — routes to HR Admin,
+    then Authorizing Officer, rather than leaving the application stuck.
+    """
+    from django.db.models import Q
+
+    from apps.accounts.models import User
+
+    if routed_hod_for(application) is not None:
+        return None
+
+    def _first_with_role(role):
+        return User.objects.filter(
+            Q(role=role) | Q(additional_roles__role=role), is_active=True
+        ).distinct().order_by('id').first()
+
+    return _first_with_role(Role.HR_ADMIN) or _first_with_role(Role.AUTHORIZING_OFFICER)
+
+
+def effective_reviewer_for(application):
+    """The user who should act on Section B1: routed_hod_for, else fallback_reviewer_for."""
+    return routed_hod_for(application) or fallback_reviewer_for(application)
 
 
 def can_view_application(user, application):
@@ -78,6 +149,30 @@ def can_view_application(user, application):
     return False
 
 
+def hod_scope_q(user):
+    """
+    Q object matching applications from employees this head reviews: those
+    whose department/division/support_division matches the head's own (role-
+    derived routing), plus legacy manager-based routing (Section/Unit heads,
+    or any head manually assigned as someone's manager).
+    """
+    from django.db.models import Q
+
+    q = Q(employee__manager=user)
+    role_to_field = {
+        Role.HEAD_OF_DEPARTMENT: 'department',
+        Role.HEAD_OF_DIVISION: 'division',
+        Role.HEAD_OF_SUPPORT_DIVISION: 'support_division',
+    }
+    for role, field in role_to_field.items():
+        if not user.has_role(role):
+            continue
+        org_unit_id = getattr(user, f'{field}_id')
+        if org_unit_id is not None:
+            q |= Q(**{f'employee__{field}_id': org_unit_id})
+    return q
+
+
 def visible_queryset_for(user, queryset):
     """Row-level filter applied to list endpoints so users only see what they're allowed to."""
     from django.db.models import Q
@@ -85,7 +180,7 @@ def visible_queryset_for(user, queryset):
     if is_system_admin(user) or is_hr_admin(user) or is_authorizing_officer(user):
         return queryset
     if is_hod(user):
-        return queryset.filter(Q(employee=user) | Q(employee__manager=user))
+        return queryset.filter(Q(employee=user) | hod_scope_q(user))
     return queryset.filter(employee=user)
 
 
@@ -108,13 +203,15 @@ def assert_can_edit_fields(user, application, incoming_fields):
             raise PermissionDenied(f'You may only edit Section A fields. Disallowed: {sorted(disallowed)}')
         return
 
-    if is_hod(user):
-        hod = routed_hod_for(application)
-        if hod is None or hod.id != user.id:
+    if incoming_fields and incoming_fields <= SECTION_B1_FIELDS:
+        # Section B1 (recommendation) belongs to whoever is actually routed
+        # to review this application -- the matched Head of Department/
+        # Division/Support Division/Section/Unit, or (vacant post) the
+        # fallback HR Admin/Authorizing Officer -- not gated by role alone,
+        # since the fallback reviewer may not hold a HOD_ROLES role.
+        reviewer = effective_reviewer_for(application)
+        if reviewer is None or reviewer.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
-        disallowed = incoming_fields - SECTION_B1_FIELDS
-        if disallowed:
-            raise PermissionDenied(f'You may only edit Section B1 (recommendation). Disallowed: {sorted(disallowed)}')
         return
 
     if is_hr_admin(user):
@@ -142,7 +239,7 @@ class IsAuthenticatedAndRole(permissions.BasePermission):
             return False
         if user.is_superuser:
             return True
-        return user.role in self.allowed_roles
+        return any(user.has_role(r) for r in self.allowed_roles)
 
 
 class IsSystemAdmin(IsAuthenticatedAndRole):

@@ -16,17 +16,21 @@ export interface Permissions {
   canViewAllApplications: boolean;
 }
 
-function buildPermissions(role: Role): Permissions {
-  const isHod = HOD_ROLES.includes(role);
+// Every user is EMPLOYEE by default and may additionally hold roles like
+// HEAD_OF_DEPARTMENT (see User.additional_roles) — permissions are derived
+// from the full set of roles a user holds, not just their base `role`.
+function buildPermissions(roles: Role[]): Permissions {
+  const has = (r: Role) => roles.includes(r);
+  const isHod = roles.some((r) => HOD_ROLES.includes(r));
   return {
-    canCreateLeaveApplication: role === "EMPLOYEE" || isHod, // any employee (incl. line managers) can apply
+    canCreateLeaveApplication: has("EMPLOYEE") || isHod, // any employee (incl. line managers) can apply
     canRecommend: isHod,
-    canVerify: role === "HR_ADMIN",
-    canApprove: role === "AUTHORIZING_OFFICER",
-    canManageLeaveTypes: role === "SYSTEM_ADMIN",
-    canManageHolidays: role === "SYSTEM_ADMIN",
-    canManageUsers: role === "SYSTEM_ADMIN",
-    canViewAllApplications: isHod || role === "HR_ADMIN" || role === "AUTHORIZING_OFFICER" || role === "SYSTEM_ADMIN",
+    canVerify: has("HR_ADMIN"),
+    canApprove: has("AUTHORIZING_OFFICER"),
+    canManageLeaveTypes: has("SYSTEM_ADMIN"),
+    canManageHolidays: has("SYSTEM_ADMIN"),
+    canManageUsers: has("SYSTEM_ADMIN"),
+    canViewAllApplications: isHod || has("HR_ADMIN") || has("AUTHORIZING_OFFICER") || has("SYSTEM_ADMIN"),
   };
 }
 
@@ -41,15 +45,19 @@ const emptyPermissions: Permissions = {
   canViewAllApplications: false,
 };
 
-export function getPermissions(role: Role | null | undefined): Permissions {
-  if (!role) return emptyPermissions;
-  return buildPermissions(role);
+export function getPermissions(roles: Role[] | Role | null | undefined): Permissions {
+  if (!roles) return emptyPermissions;
+  const list = Array.isArray(roles) ? roles : [roles];
+  if (list.length === 0) return emptyPermissions;
+  return buildPermissions(list);
 }
 
 // Maps each role to its "home" route prefix, used by guards + post-login redirect.
 export const roleHomeRoute: Record<Role, string> = {
   EMPLOYEE: "/employee/applications",
   HEAD_OF_DEPARTMENT: "/hod/applications",
+  HEAD_OF_DIVISION: "/hod/applications",
+  HEAD_OF_SUPPORT_DIVISION: "/hod/applications",
   HEAD_OF_SECTION: "/hod/applications",
   HEAD_OF_UNIT: "/hod/applications",
   HR_ADMIN: "/hr/applications",
@@ -63,6 +71,8 @@ export const roleHomeRoute: Record<Role, string> = {
 const allRoles: Role[] = [
   "EMPLOYEE",
   "HEAD_OF_DEPARTMENT",
+  "HEAD_OF_DIVISION",
+  "HEAD_OF_SUPPORT_DIVISION",
   "HEAD_OF_SECTION",
   "HEAD_OF_UNIT",
   "HR_ADMIN",

@@ -13,6 +13,7 @@ import pytest
 from apps.leave.balances import recalculate_balance
 from apps.leave.entitlement import compute_entitlement, find_matching_policy, years_of_service
 from apps.leave.models import LeaveBalance, LeavePolicy
+from apps.organization.models import Designation
 
 pytestmark = pytest.mark.django_db
 
@@ -20,6 +21,13 @@ pytestmark = pytest.mark.django_db
 def _today():
     from django.utils import timezone
     return timezone.now().date()
+
+
+def _designation(name):
+    """employee_user.designation is a FK to organization.Designation (was a
+    free-text field) -- LeavePolicy.designation stays free text and is
+    matched against the FK's *name*, so tests need a real Designation row."""
+    return Designation.objects.create(name=name, code=name.upper().replace(' ', '_')[:32])
 
 
 # --- years_of_service / policy matching -----------------------------------
@@ -194,7 +202,7 @@ def test_policy_max_less_than_min_rejected(as_user, sysadmin_user, leave_type):
 
 
 def test_designation_only_match(employee_user, leave_type):
-    employee_user.designation = 'Auditor General'
+    employee_user.designation = _designation('Auditor General')
     LeavePolicy.objects.create(
         leave_type=leave_type, designation='Auditor General',
         annual_entitlement=Decimal('35.00'),
@@ -203,7 +211,7 @@ def test_designation_only_match(employee_user, leave_type):
 
 
 def test_designation_match_is_case_insensitive(employee_user, leave_type):
-    employee_user.designation = 'auditor general'
+    employee_user.designation = _designation('auditor general')
     LeavePolicy.objects.create(
         leave_type=leave_type, designation='Auditor General',
         annual_entitlement=Decimal('35.00'),
@@ -212,7 +220,7 @@ def test_designation_match_is_case_insensitive(employee_user, leave_type):
 
 
 def test_designation_mismatch_does_not_match(employee_user, leave_type):
-    employee_user.designation = 'Clerk'
+    employee_user.designation = _designation('Clerk')
     LeavePolicy.objects.create(
         leave_type=leave_type, designation='Auditor General',
         annual_entitlement=Decimal('35.00'),
@@ -222,7 +230,7 @@ def test_designation_mismatch_does_not_match(employee_user, leave_type):
 
 
 def test_tenure_only_match_when_no_designation_policy(employee_user, leave_type):
-    employee_user.designation = 'Clerk'
+    employee_user.designation = _designation('Clerk')
     employee_user.date_of_first_appointment = _today().replace(year=_today().year - 6)
     LeavePolicy.objects.create(
         leave_type=leave_type, min_years_of_service=5, max_years_of_service=None,
@@ -232,7 +240,7 @@ def test_tenure_only_match_when_no_designation_policy(employee_user, leave_type)
 
 
 def test_designation_and_tenure_match_beats_either_alone(employee_user, leave_type):
-    employee_user.designation = 'Auditor General'
+    employee_user.designation = _designation('Auditor General')
     employee_user.date_of_first_appointment = _today().replace(year=_today().year - 6)
 
     # Designation-only policy (specificity 1).
@@ -256,7 +264,7 @@ def test_designation_and_tenure_match_beats_either_alone(employee_user, leave_ty
 
 
 def test_no_match_falls_back_to_default(employee_user, leave_type):
-    employee_user.designation = 'Clerk'
+    employee_user.designation = _designation('Clerk')
     employee_user.date_of_first_appointment = _today().replace(year=_today().year - 1)
     LeavePolicy.objects.create(
         leave_type=leave_type, designation='Auditor General', min_years_of_service=5,
@@ -266,7 +274,7 @@ def test_no_match_falls_back_to_default(employee_user, leave_type):
 
 
 def test_ambiguous_same_specificity_uses_sort_order_tiebreaker(employee_user, leave_type):
-    employee_user.designation = 'Auditor General'
+    employee_user.designation = _designation('Auditor General')
     employee_user.date_of_first_appointment = _today().replace(year=_today().year - 6)
 
     LeavePolicy.objects.create(

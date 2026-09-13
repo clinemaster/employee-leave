@@ -3,6 +3,7 @@
 import { use } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { SectionA, SectionB1ReadOnly } from "@/components/leave/SectionReadOnly";
+import { DownloadPdfButton } from "@/components/leave/DownloadPdfButton";
 import { HrReviewForm } from "@/components/workflow/HrReviewForm";
 import { LeaveBalances } from "@/components/leave/LeaveBalances";
 import { TravelPaymentPreview } from "@/components/leave/TravelPaymentPreview";
@@ -22,7 +23,10 @@ export default function HrApplicationDetailPage({ params }: { params: Promise<{ 
 
   return (
     <AppShell>
-      <h1 className="mb-6 text-xl font-semibold text-gray-900">Review Application #{applicationId}</h1>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-gray-900">Review Application #{applicationId}</h1>
+        <DownloadPdfButton applicationId={applicationId} status={application?.status} />
+      </div>
       {isLoading || !application ? (
         <p className="text-sm text-gray-500">Loading...</p>
       ) : (

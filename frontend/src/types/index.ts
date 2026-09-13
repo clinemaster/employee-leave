@@ -6,14 +6,22 @@
 export type Role =
   | "EMPLOYEE"
   | "HEAD_OF_DEPARTMENT"
+  | "HEAD_OF_DIVISION"
+  | "HEAD_OF_SUPPORT_DIVISION"
   | "HEAD_OF_SECTION"
   | "HEAD_OF_UNIT"
   | "HR_ADMIN"
   | "AUTHORIZING_OFFICER"
   | "SYSTEM_ADMIN";
 
-// Any of the three "line manager" roles that review Section B1.
-export const HOD_ROLES: Role[] = ["HEAD_OF_DEPARTMENT", "HEAD_OF_SECTION", "HEAD_OF_UNIT"];
+// Any of the five "line manager" roles that review Section B1.
+export const HOD_ROLES: Role[] = [
+  "HEAD_OF_DEPARTMENT",
+  "HEAD_OF_DIVISION",
+  "HEAD_OF_SUPPORT_DIVISION",
+  "HEAD_OF_SECTION",
+  "HEAD_OF_UNIT",
+];
 
 export interface User {
   id: number;
@@ -22,18 +30,46 @@ export interface User {
   email: string;
   official_email?: string | null;
   role: Role;
+  // Roles held in addition to `role` (e.g. an EMPLOYEE also designated
+  // HEAD_OF_DEPARTMENT) — see allUserRoles(). Read-only; set via
+  // UserWriteSerializer's `additional_roles` on create/update.
+  additional_roles?: Role[];
   check_number?: string | null;
   personnel_file_number?: string | null;
-  designation?: string | null;
-  station?: string | null;
-  department?: string | null;
-  section?: string | null;
-  unit?: string | null;
+  designation?: number | null;
+  designation_name?: string | null;
+  work_station?: number | null;
+  work_station_name?: string | null;
+  department?: number | null;
+  department_name?: string | null;
+  division?: number | null;
+  division_name?: string | null;
+  support_division?: number | null;
+  support_division_name?: string | null;
+  section?: number | null;
+  section_name?: string | null;
+  unit?: number | null;
+  unit_name?: string | null;
   manager?: number | null;
   phone_number?: string | null;
   date_of_first_appointment?: string | null;
   is_active: boolean;
   mfa_enabled?: boolean;
+}
+
+// The full set of roles a user holds: base `role` plus any additional_roles.
+export function allUserRoles(user: Pick<User, "role" | "additional_roles"> | null | undefined): Role[] {
+  if (!user) return [];
+  return [user.role, ...(user.additional_roles ?? [])];
+}
+
+// The name of whichever org unit the user belongs to (they belong to
+// exactly one of department/division/support_division) — for display.
+export function orgUnitName(
+  user: Pick<User, "department_name" | "division_name" | "support_division_name"> | null | undefined
+): string | null {
+  if (!user) return null;
+  return user.department_name ?? user.division_name ?? user.support_division_name ?? null;
 }
 
 export type LeaveStatus =

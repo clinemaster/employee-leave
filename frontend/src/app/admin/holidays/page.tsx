@@ -61,14 +61,16 @@ export default function AdminHolidaysPage() {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead>
               <tr className="text-left text-gray-500">
+                <th className="py-2 pr-4">S/No</th>
                 <th className="py-2 pr-4">Date</th>
                 <th className="py-2 pr-4">Name</th>
                 <th className="py-2 pr-4">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {holidays?.map((h) => (
+              {holidays?.map((h, index) => (
                 <tr key={h.id}>
+                  <td className="py-2 pr-4">{index + 1}</td>
                   <td className="py-2 pr-4">{h.date}</td>
                   <td className="py-2 pr-4">{h.name}</td>
                   <td className="py-2 pr-4">

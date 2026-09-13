@@ -122,6 +122,7 @@ export default function AdminLeaveTypesPage() {
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead>
               <tr className="text-left text-gray-500">
+                <th className="py-2 pr-4">S/No</th>
                 <th className="py-2 pr-4">Order</th>
                 <th className="py-2 pr-4">Code</th>
                 <th className="py-2 pr-4">Name</th>
@@ -134,6 +135,7 @@ export default function AdminLeaveTypesPage() {
                 const isEditing = editingId === lt.id;
                 return (
                   <tr key={lt.id}>
+                    <td className="py-2 pr-4">{index + 1}</td>
                     <td className="py-2 pr-4">
                       <div className="flex items-center gap-1">
                         <button

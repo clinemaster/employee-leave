@@ -5,6 +5,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import Role, User
 from apps.leave.models import LeaveType
+from apps.organization.models import Department
 
 
 @pytest.fixture(autouse=True)
@@ -42,6 +43,11 @@ def make_user(db):
     def _factory(**kwargs):
         return _make_user(db, **kwargs)
     return _factory
+
+
+@pytest.fixture
+def department(db):
+    return Department.objects.create(name='Test Department', code='TESTDEPT')
 
 
 @pytest.fixture

@@ -47,8 +47,7 @@ from apps.notifications.models import Notification
 
 from .models import ApplicationStatus as S
 from .permissions import (
-    is_authorizing_officer, is_hod, is_hr_admin, is_system_admin,
-    routed_hod_for,
+    effective_reviewer_for, is_authorizing_officer, is_hr_admin, is_system_admin,
 )
 
 # Maps action name -> (from_statuses, to_status)
@@ -79,21 +78,21 @@ def _check_role_for_action(user, application, action):
     if action in ('submit',):
         if application.employee_id != user.id:
             raise PermissionDenied('Only the applicant may submit this application.')
-        if routed_hod_for(application) is None:
-            # Without a routed HOD, the application would move to
-            # PENDING_HOD_REVIEW with no one able to act on it (recommend/
-            # return both require a routed HOD) — stuck forever with no
+        if effective_reviewer_for(application) is None:
+            # Without a routed OR fallback reviewer, the application would
+            # move to PENDING_HOD_REVIEW with no one able to act on it
+            # (recommend/return both require one) — stuck forever with no
             # visible reason why. Reject at submit time instead, with a
             # message that tells the applicant/admin what to fix.
             raise WorkflowError(
-                'You have no assigned Head of Department/Section/Unit to review this '
-                'application. Ask a SYSTEM_ADMIN to set your manager before submitting.'
+                'You have no assigned Head of Department/Division/Support Division/Section/'
+                'Unit to review this application, and no HR Admin or Authorizing Officer is '
+                'available as a fallback. Ask a SYSTEM_ADMIN to assign a reviewer before '
+                'submitting.'
             )
     elif action in ('recommend', 'return_to_employee'):
-        if not is_hod(user):
-            raise PermissionDenied('Only the routed Head of Department/Section/Unit may act here.')
-        hod = routed_hod_for(application)
-        if hod is None or hod.id != user.id:
+        reviewer = effective_reviewer_for(application)
+        if reviewer is None or reviewer.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
     elif action in ('verify', 'return_to_hod'):
         if not is_hr_admin(user):
@@ -105,10 +104,8 @@ def _check_role_for_action(user, application, action):
         if not (is_hr_admin(user) or is_authorizing_officer(user) or application.employee_id == user.id):
             raise PermissionDenied('You are not authorized to generate this document.')
     elif action == 'resubmit_to_hr':
-        if not is_hod(user):
-            raise PermissionDenied('Only the routed Head of Department/Section/Unit may act here.')
-        hod = routed_hod_for(application)
-        if hod is None or hod.id != user.id:
+        reviewer = effective_reviewer_for(application)
+        if reviewer is None or reviewer.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
     elif action == 'complete':
         if not (is_hr_admin(user) or is_authorizing_officer(user)):
@@ -189,17 +186,23 @@ def perform_transition(application, user, action, comments='', request=None):
 
 
 def _hr_admins():
-    return User.objects.filter(role=Role.HR_ADMIN, is_active=True)
+    from django.db.models import Q
+    return User.objects.filter(
+        Q(role=Role.HR_ADMIN) | Q(additional_roles__role=Role.HR_ADMIN), is_active=True
+    ).distinct()
 
 
 def _authorizing_officers():
-    return User.objects.filter(role=Role.AUTHORIZING_OFFICER, is_active=True)
+    from django.db.models import Q
+    return User.objects.filter(
+        Q(role=Role.AUTHORIZING_OFFICER) | Q(additional_roles__role=Role.AUTHORIZING_OFFICER), is_active=True
+    ).distinct()
 
 
 def _send_transition_notifications(application, action, actor):
     employee_id = application.employee_id
     employee = application.employee
-    hod = routed_hod_for(application)
+    hod = effective_reviewer_for(application)
     hod_id = hod.id if hod else None
 
     messages = {

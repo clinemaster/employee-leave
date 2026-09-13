@@ -11,6 +11,7 @@ import { clearTokens } from "@/lib/auth/tokenStorage";
 import { Button } from "@/components/ui/Button";
 import { RoleGuard } from "@/components/workflow/RoleGuard";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
+import { allUserRoles } from "@/types";
 
 const navByRole: Record<string, { label: string; href: string }[]> = {
   EMPLOYEE: [
@@ -18,6 +19,14 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
     { label: "New Leave Application", href: "/employee/leave/new" },
   ],
   HEAD_OF_DEPARTMENT: [
+    { label: "Recommendations", href: "/hod/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  HEAD_OF_DIVISION: [
+    { label: "Recommendations", href: "/hod/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  HEAD_OF_SUPPORT_DIVISION: [
     { label: "Recommendations", href: "/hod/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
@@ -49,12 +58,22 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
   ],
 };
 
+function dedupeByHref(items: { label: string; href: string }[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => (seen.has(item.href) ? false : (seen.add(item.href), true)));
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const dispatch = useAppDispatch();
   const user = useAppSelector(selectCurrentUser);
-  const navItems = user ? [...(navByRole[user.role] ?? []), { label: "Settings", href: "/settings" }] : [];
+  const navItems = user
+    ? [
+        ...dedupeByHref(allUserRoles(user).flatMap((r) => navByRole[r] ?? [])),
+        { label: "Settings", href: "/settings" },
+      ]
+    : [];
 
   function handleLogout() {
     clearTokens();

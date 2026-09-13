@@ -12,6 +12,7 @@ import { useAppSelector } from "@/store/hooks";
 import { selectCurrentUser, selectIsAuthenticated } from "@/features/auth/selectors";
 import { selectAuthHydrated } from "@/store/slices/authSlice";
 import { routeRoleMap } from "@/lib/permissions";
+import { allUserRoles } from "@/types";
 
 export function RoleGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -33,7 +34,7 @@ export function RoleGuard({ children }: { children: ReactNode }) {
     }
 
     const rule = routeRoleMap.find((r) => pathname.startsWith(r.prefix));
-    if (rule && user && !rule.roles.includes(user.role)) {
+    if (rule && user && !allUserRoles(user).some((r) => rule.roles.includes(r))) {
       router.replace("/dashboard");
     }
   }, [hydrated, isAuthenticated, user, pathname, router]);
@@ -41,7 +42,7 @@ export function RoleGuard({ children }: { children: ReactNode }) {
   if (!hydrated || !isAuthenticated) return null;
 
   const rule = routeRoleMap.find((r) => pathname.startsWith(r.prefix));
-  if (rule && user && !rule.roles.includes(user.role)) return null;
+  if (rule && user && !allUserRoles(user).some((r) => rule.roles.includes(r))) return null;
 
   return <>{children}</>;
 }

@@ -24,6 +24,33 @@ class Department(TimeStampedSoftDeleteModel):
         return self.name
 
 
+class Division(TimeStampedSoftDeleteModel):
+    """Top-level organizational unit, parallel to Department, for staff who
+    belong to a Division rather than a Department."""
+    name = models.CharField(max_length=255, unique=True)
+    code = models.CharField(max_length=32, unique=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class SupportDivision(TimeStampedSoftDeleteModel):
+    """Top-level organizational unit, parallel to Department, for staff who
+    belong to a Support Division rather than a Department."""
+    name = models.CharField(max_length=255, unique=True)
+    code = models.CharField(max_length=32, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = 'Support Divisions'
+
+    def __str__(self):
+        return self.name
+
+
 class Section(TimeStampedSoftDeleteModel):
     """A Section belongs to a Department."""
     name = models.CharField(max_length=255)
@@ -64,11 +91,23 @@ class Unit(TimeStampedSoftDeleteModel):
         return f'{self.name} ({self.section.name})'
 
 
-class Station(TimeStampedSoftDeleteModel):
-    """Physical duty station (e.g. a regional office)."""
+class WorkStation(TimeStampedSoftDeleteModel):
+    """Physical duty station (e.g. a regional office) -- every employee belongs to one."""
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=32, unique=True)
     address = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class Designation(TimeStampedSoftDeleteModel):
+    """A job title/grade (e.g. Auditor General, Clerk) that a User may hold."""
+    name = models.CharField(max_length=255, unique=True)
+    code = models.CharField(max_length=32, unique=True)
 
     class Meta:
         ordering = ['name']
