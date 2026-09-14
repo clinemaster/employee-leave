@@ -168,8 +168,11 @@ class MfaLoginVerifyView(APIView):
         user.save(update_fields=['mfa_last_verified_step'])
 
         refresh = RefreshToken.for_user(user)
+        full_user = User.objects.select_related(
+            'department', 'division', 'support_division', 'work_station', 'section', 'unit', 'designation',
+        ).prefetch_related('additional_roles').get(pk=user.pk)
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(full_user).data,
         })

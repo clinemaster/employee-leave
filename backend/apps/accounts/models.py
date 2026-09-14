@@ -11,12 +11,23 @@ class Role(models.TextChoices):
     HEAD_OF_UNIT = 'HEAD_OF_UNIT', 'Head of Unit'
     HR_ADMIN = 'HR_ADMIN', 'HR Admin'
     AUTHORIZING_OFFICER = 'AUTHORIZING_OFFICER', 'Authorizing Officer'
+    CAG = 'CAG', 'CAG'
     SYSTEM_ADMIN = 'SYSTEM_ADMIN', 'System Admin'
 
 # Roles exempt from the "belongs to exactly one of department/division/
 # support_division" rule -- these are organization-wide, not tied to a
 # single org unit.
-ORG_UNIT_EXEMPT_ROLES = {Role.SYSTEM_ADMIN, Role.HR_ADMIN, Role.AUTHORIZING_OFFICER}
+ORG_UNIT_EXEMPT_ROLES = {Role.SYSTEM_ADMIN, Role.HR_ADMIN, Role.AUTHORIZING_OFFICER, Role.CAG}
+
+# Applicant roles for whom the leave workflow must route through CAG review
+# instead of the normal Head of Department/Division/Support Division stage
+# (see apps.leave.permissions.needs_cag_review). These are leadership roles
+# that sit at or above the normal HOD review layer, so a CAG reviewer stands
+# in for that stage.
+CAG_APPLICANT_ROLES = {
+    Role.AUTHORIZING_OFFICER, Role.HEAD_OF_DEPARTMENT,
+    Role.HEAD_OF_SUPPORT_DIVISION, Role.HEAD_OF_DIVISION,
+}
 
 
 class User(AbstractUser):
@@ -65,6 +76,10 @@ class User(AbstractUser):
     official_email = models.EmailField(blank=True)
     date_of_first_appointment = models.DateField(null=True, blank=True)
     phone_number = models.CharField(max_length=32, blank=True)
+
+    # Budget coding used to pre-fill leave applications' Section A.
+    vote_code = models.CharField(max_length=32, blank=True)
+    sub_vote = models.CharField(max_length=32, blank=True)
 
     # Supervisor/manager used to route applications to the correct
     # Head of Department/Section/Unit for review.

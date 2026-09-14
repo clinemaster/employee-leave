@@ -8,10 +8,10 @@ import { HOD_ROLES } from "@/types";
 export interface Permissions {
   canCreateLeaveApplication: boolean;
   canRecommend: boolean; // HOD/HOS/HOU — Section B1
+  canCagReview: boolean; // CAG — mandatory stand-in for Section B1 for the four leadership roles
   canVerify: boolean; // HR_ADMIN — Section B2
   canApprove: boolean; // AUTHORIZING_OFFICER — Section C
   canManageLeaveTypes: boolean;
-  canManageHolidays: boolean;
   canManageUsers: boolean;
   canViewAllApplications: boolean;
 }
@@ -25,22 +25,22 @@ function buildPermissions(roles: Role[]): Permissions {
   return {
     canCreateLeaveApplication: has("EMPLOYEE") || isHod, // any employee (incl. line managers) can apply
     canRecommend: isHod,
+    canCagReview: has("CAG"),
     canVerify: has("HR_ADMIN"),
     canApprove: has("AUTHORIZING_OFFICER"),
     canManageLeaveTypes: has("SYSTEM_ADMIN"),
-    canManageHolidays: has("SYSTEM_ADMIN"),
     canManageUsers: has("SYSTEM_ADMIN"),
-    canViewAllApplications: isHod || has("HR_ADMIN") || has("AUTHORIZING_OFFICER") || has("SYSTEM_ADMIN"),
+    canViewAllApplications: isHod || has("HR_ADMIN") || has("AUTHORIZING_OFFICER") || has("CAG") || has("SYSTEM_ADMIN"),
   };
 }
 
 const emptyPermissions: Permissions = {
   canCreateLeaveApplication: false,
   canRecommend: false,
+  canCagReview: false,
   canVerify: false,
   canApprove: false,
   canManageLeaveTypes: false,
-  canManageHolidays: false,
   canManageUsers: false,
   canViewAllApplications: false,
 };
@@ -62,6 +62,7 @@ export const roleHomeRoute: Record<Role, string> = {
   HEAD_OF_UNIT: "/hod/applications",
   HR_ADMIN: "/hr/applications",
   AUTHORIZING_OFFICER: "/authorization/applications",
+  CAG: "/cag/applications",
   SYSTEM_ADMIN: "/admin/leave-types",
 };
 
@@ -77,6 +78,7 @@ const allRoles: Role[] = [
   "HEAD_OF_UNIT",
   "HR_ADMIN",
   "AUTHORIZING_OFFICER",
+  "CAG",
   "SYSTEM_ADMIN",
 ];
 
@@ -85,5 +87,6 @@ export const routeRoleMap: { prefix: string; roles: Role[] }[] = [
   { prefix: "/hod", roles: [...HOD_ROLES, "SYSTEM_ADMIN"] },
   { prefix: "/hr", roles: ["HR_ADMIN", "SYSTEM_ADMIN"] },
   { prefix: "/authorization", roles: ["AUTHORIZING_OFFICER", "SYSTEM_ADMIN"] },
+  { prefix: "/cag", roles: ["CAG", "SYSTEM_ADMIN"] },
   { prefix: "/admin", roles: ["SYSTEM_ADMIN"] },
 ];

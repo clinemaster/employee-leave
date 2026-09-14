@@ -58,7 +58,6 @@ describe("selectPermissions", () => {
   it("derives SYSTEM_ADMIN permissions (manage everything, cannot itself create by role rule)", () => {
     const perms = selectPermissions(stateWithRole("SYSTEM_ADMIN"));
     expect(perms.canManageLeaveTypes).toBe(true);
-    expect(perms.canManageHolidays).toBe(true);
     expect(perms.canManageUsers).toBe(true);
     expect(perms.canViewAllApplications).toBe(true);
     expect(perms.canCreateLeaveApplication).toBe(false);
@@ -69,10 +68,10 @@ describe("selectPermissions", () => {
     expect(perms).toEqual({
       canCreateLeaveApplication: false,
       canRecommend: false,
+      canCagReview: false,
       canVerify: false,
       canApprove: false,
       canManageLeaveTypes: false,
-      canManageHolidays: false,
       canManageUsers: false,
       canViewAllApplications: false,
     });

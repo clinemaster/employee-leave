@@ -11,9 +11,7 @@ import {
   useGetDepartmentsQuery,
   useGetDesignationsQuery,
   useGetDivisionsQuery,
-  useGetSectionsQuery,
   useGetSupportDivisionsQuery,
-  useGetUnitsQuery,
   useGetWorkStationsQuery,
 } from "@/features/departments/orgApi";
 import { extractErrorMessage } from "@/lib/api/errors";
@@ -24,7 +22,7 @@ const PAGE_SIZE = 25;
 // Roles exempt from the "belongs to exactly one org unit" rule (mirrors
 // apps.accounts.models.ORG_UNIT_EXEMPT_ROLES on the backend) — organization-
 // wide roles that aren't tied to a single department/division/support division.
-const ORG_UNIT_EXEMPT_ROLES: Role[] = ["SYSTEM_ADMIN", "HR_ADMIN", "AUTHORIZING_OFFICER"];
+const ORG_UNIT_EXEMPT_ROLES: Role[] = ["SYSTEM_ADMIN", "HR_ADMIN", "AUTHORIZING_OFFICER", "CAG"];
 
 type OrgUnitType = "department" | "division" | "support_division";
 
@@ -39,6 +37,7 @@ const roles: Role[] = [
   "HEAD_OF_UNIT",
   "HR_ADMIN",
   "AUTHORIZING_OFFICER",
+  "CAG",
   "SYSTEM_ADMIN",
 ];
 
@@ -68,6 +67,8 @@ export default function AdminUsersPage() {
   const [checkNumber, setCheckNumber] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [voteCode, setVoteCode] = useState("");
+  const [subVote, setSubVote] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [orgUnitType, setOrgUnitType] = useState<OrgUnitType>("department");
@@ -97,6 +98,8 @@ export default function AdminUsersPage() {
         email,
         role: "EMPLOYEE",
         password: password || undefined,
+        vote_code: voteCode,
+        sub_vote: subVote,
         ...(needsOrgUnit ? { [orgUnitType]: Number(orgUnitId) } : {}),
       }).unwrap();
       setUsername("");
@@ -104,6 +107,8 @@ export default function AdminUsersPage() {
       setCheckNumber("");
       setEmail("");
       setPassword("");
+      setVoteCode("");
+      setSubVote("");
       setOrgUnitType("department");
       setOrgUnitId("");
     } catch (err) {
@@ -139,6 +144,14 @@ export default function AdminUsersPage() {
           <div>
             <Label htmlFor="password">Temp password</Label>
             <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="voteCode">Vote code</Label>
+            <Input id="voteCode" value={voteCode} onChange={(e) => setVoteCode(e.target.value)} />
+          </div>
+          <div>
+            <Label htmlFor="subVote">Sub-vote</Label>
+            <Input id="subVote" value={subVote} onChange={(e) => setSubVote(e.target.value)} />
           </div>
           {needsOrgUnit ? (
             <>
@@ -326,20 +339,17 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const { data: supportDivisions } = useGetSupportDivisionsQuery();
   const { data: designations } = useGetDesignationsQuery();
   const { data: workStations } = useGetWorkStationsQuery();
-  const { data: sections } = useGetSectionsQuery();
-  const { data: units } = useGetUnitsQuery();
 
   const [username, setUsername] = useState(user.username);
   const [fullName, setFullName] = useState(user.full_name);
   const [checkNumber, setCheckNumber] = useState(user.check_number ?? "");
   const [email, setEmail] = useState(user.email);
-  const [officialEmail, setOfficialEmail] = useState(user.official_email ?? "");
   const [personnelFileNumber, setPersonnelFileNumber] = useState(user.personnel_file_number ?? "");
   const [phoneNumber, setPhoneNumber] = useState(user.phone_number ?? "");
+  const [voteCode, setVoteCode] = useState(user.vote_code ?? "");
+  const [subVote, setSubVote] = useState(user.sub_vote ?? "");
   const [designation, setDesignation] = useState(user.designation != null ? String(user.designation) : "");
   const [workStation, setWorkStation] = useState(user.work_station != null ? String(user.work_station) : "");
-  const [section, setSection] = useState(user.section != null ? String(user.section) : "");
-  const [unit, setUnit] = useState(user.unit != null ? String(user.unit) : "");
   const [orgUnitType, setOrgUnitType] = useState<OrgUnitType>(initialOrgUnitType(user));
   const [orgUnitId, setOrgUnitId] = useState(
     String(user.department ?? user.division ?? user.support_division ?? "")
@@ -361,13 +371,12 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         full_name: fullName,
         check_number: checkNumber,
         email,
-        official_email: officialEmail,
         personnel_file_number: personnelFileNumber,
         phone_number: phoneNumber,
+        vote_code: voteCode,
+        sub_vote: subVote,
         designation: designation ? Number(designation) : null,
         work_station: workStation ? Number(workStation) : null,
-        section: section ? Number(section) : null,
-        unit: unit ? Number(unit) : null,
         department: null,
         division: null,
         support_division: null,
@@ -399,15 +408,6 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
           <Input id="edit-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
         </div>
         <div>
-          <Label htmlFor="edit-officialEmail">Official email</Label>
-          <Input
-            id="edit-officialEmail"
-            type="email"
-            value={officialEmail}
-            onChange={(e) => setOfficialEmail(e.target.value)}
-          />
-        </div>
-        <div>
           <Label htmlFor="edit-personnelFile">Personnel file number</Label>
           <Input
             id="edit-personnelFile"
@@ -418,6 +418,14 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         <div>
           <Label htmlFor="edit-phone">Phone number</Label>
           <Input id="edit-phone" value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+        </div>
+        <div>
+          <Label htmlFor="edit-voteCode">Vote code</Label>
+          <Input id="edit-voteCode" value={voteCode} onChange={(e) => setVoteCode(e.target.value)} />
+        </div>
+        <div>
+          <Label htmlFor="edit-subVote">Sub-vote</Label>
+          <Input id="edit-subVote" value={subVote} onChange={(e) => setSubVote(e.target.value)} />
         </div>
         <div>
           <Label htmlFor="edit-designation">Designation</Label>
@@ -447,38 +455,6 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
             {workStations?.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="edit-section">Section</Label>
-          <select
-            id="edit-section"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            value={section}
-            onChange={(e) => setSection(e.target.value)}
-          >
-            <option value="">None</option>
-            {sections?.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <Label htmlFor="edit-unit">Unit</Label>
-          <select
-            id="edit-unit"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            value={unit}
-            onChange={(e) => setUnit(e.target.value)}
-          >
-            <option value="">None</option>
-            {units?.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name}
               </option>
             ))}
           </select>

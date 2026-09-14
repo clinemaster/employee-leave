@@ -4,8 +4,8 @@ from rest_framework import serializers
 
 from .entitlement import compute_entitlement
 from .models import (
-    Holiday, LeaveApplication, LeaveApproval, LeaveBalance, LeaveDependant,
-    LeaveHRReview, LeavePolicy, LeaveRecommendation, LeaveType,
+    LeaveApplication, LeaveApproval, LeaveBalance, LeaveCAGReview,
+    LeaveDependant, LeaveHRReview, LeavePolicy, LeaveRecommendation, LeaveType,
     MizigoItem, PersonType, TaxiExpense, TravelRoute, TravelRoutePassenger,
 )
 from .workingdays import calculate_working_days
@@ -23,12 +23,6 @@ class PersonTypeSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'code', 'is_active', 'sort_order']
 
 
-class HolidaySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Holiday
-        fields = ['id', 'date', 'name', 'is_recurring']
-
-
 class LeaveDependantSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveDependant
@@ -38,6 +32,16 @@ class LeaveDependantSerializer(serializers.ModelSerializer):
 class LeaveRecommendationSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveRecommendation
+        fields = [
+            'id', 'reviewer', 'recommended', 'comments',
+            'signature_name', 'signature_designation', 'signature_date',
+        ]
+        read_only_fields = ['id', 'reviewer']
+
+
+class LeaveCAGReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LeaveCAGReview
         fields = [
             'id', 'reviewer', 'recommended', 'comments',
             'signature_name', 'signature_designation', 'signature_date',
@@ -129,11 +133,20 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
     """Read serializer — full nested view of an application (all sections)."""
     dependants = LeaveDependantSerializer(many=True, read_only=True)
     recommendation = LeaveRecommendationSerializer(read_only=True)
+    cag_review = LeaveCAGReviewSerializer(read_only=True)
     hr_review = LeaveHRReviewSerializer(read_only=True)
     approval = LeaveApprovalSerializer(read_only=True)
     leave_type_name = serializers.CharField(source='leave_type.name', read_only=True)
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     working_days_preview = serializers.SerializerMethodField()
+    # Derived from `status` (see LeaveApplication.current_location/
+    # current_status_label) — never independently settable, so no write path
+    # exists for either of these.
+    current_location = serializers.CharField(read_only=True)
+    current_status_label = serializers.CharField(read_only=True)
+    # Derived from the employee's role (see LeaveApplication.requires_cag_review)
+    # — tells the frontend whether to show the CAG stage in the stepper.
+    requires_cag_review = serializers.BooleanField(read_only=True)
 
     # Travel payment request (JEDWALI 1)
     travel_routes = TravelRouteSerializer(many=True, read_only=True)
@@ -147,19 +160,22 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
     class Meta:
         model = LeaveApplication
         fields = [
-            'id', 'application_number', 'status', 'employee', 'employee_name',
+            'id', 'application_number', 'status', 'current_location', 'current_status_label',
+            'requires_cag_review',
+            'employee', 'employee_name',
             'vote_code', 'sub_vote', 'check_number', 'personnel_file', 'full_name',
             'designation', 'station', 'division_department', 'phone_number', 'email',
             'contact_address', 'leave_type', 'leave_type_name', 'leave_number',
             'travel_assistance', 'start_date', 'last_date', 'total_working_days',
-            'working_days_preview', 'dependants', 'recommendation', 'hr_review',
+            'working_days_preview', 'dependants', 'recommendation', 'cag_review', 'hr_review',
             'approval', 'travel_routes', 'taxi_expenses', 'mizigo_items',
             'naule_grand_total', 'taxi_grand_total', 'mizigo_grand_total',
             'travel_payment_grand_total', 'submitted_at', 'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'application_number', 'status', 'employee', 'total_working_days',
-            'submitted_at', 'created_at', 'updated_at',
+            'id', 'application_number', 'status', 'current_location', 'current_status_label',
+            'requires_cag_review',
+            'employee', 'total_working_days', 'submitted_at', 'created_at', 'updated_at',
         ]
 
     @extend_schema_field(OpenApiTypes.INT)

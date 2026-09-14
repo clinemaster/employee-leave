@@ -282,12 +282,6 @@ def _build_pdf_bytes(application):
     elements.append(Spacer(1, 0.2 * cm))
     elements.append(_signature_block('HR Admin'))
 
-    elements.append(Paragraph(
-        'Note: this is a paper-workflow replica. Signatures above are blank lines to be '
-        'signed by hand; this system does not apply digital signatures or certificates.',
-        small_style,
-    ))
-
     # Page 2: Section C
     from reportlab.platypus import PageBreak
     elements.append(PageBreak())

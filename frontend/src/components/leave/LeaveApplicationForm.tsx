@@ -255,12 +255,12 @@ export function LeaveApplicationForm() {
               </div>
             </div>
             <p className="text-xs text-gray-500">
-              Estimated working days (client preview, weekdays only — excludes holidays):{" "}
+              Estimated leave days (client preview):{" "}
               <span className="font-semibold text-gray-800">{clientPreviewDays}</span>
               {serverPreview ? (
                 <>
                   {" "}
-                  · Server preview (excludes holidays too):{" "}
+                  · Server preview:{" "}
                   <span className="font-semibold text-gray-800">{serverPreview.working_days}</span>
                 </>
               ) : null}

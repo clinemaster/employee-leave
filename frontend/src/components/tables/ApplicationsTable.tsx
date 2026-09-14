@@ -1,7 +1,17 @@
 import Link from "next/link";
-import { StatusBadge } from "@/components/ui/Badge";
+import { LocationBadge, StatusBadge } from "@/components/ui/Badge";
 import { DownloadPdfButton, isPdfDownloadable } from "@/components/leave/DownloadPdfButton";
 import type { LeaveApplication } from "@/types";
+
+function formatDateTime(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 interface PaginationProps {
   page: number;
@@ -38,6 +48,8 @@ export function ApplicationsTable({
               <th className="py-2 pr-4 font-medium">Dates</th>
               <th className="py-2 pr-4 font-medium">Days</th>
               <th className="py-2 pr-4 font-medium">Status</th>
+              <th className="py-2 pr-4 font-medium">Current Location</th>
+              <th className="py-2 pr-4 font-medium">Last Updated</th>
               <th className="py-2 pr-4 font-medium">Actions</th>
             </tr>
           </thead>
@@ -59,6 +71,12 @@ export function ApplicationsTable({
                 <td className="py-2 pr-4">{item.total_working_days ?? item.working_days_preview ?? "-"}</td>
                 <td className="py-2 pr-4">
                   <StatusBadge status={item.status} />
+                </td>
+                <td className="py-2 pr-4">
+                  {item.current_location ? <LocationBadge location={item.current_location} /> : "-"}
+                </td>
+                <td className="py-2 pr-4 whitespace-nowrap text-gray-500">
+                  {formatDateTime(item.updated_at)}
                 </td>
                 <td className="py-2 pr-4">
                   {isPdfDownloadable(item.status) ? (

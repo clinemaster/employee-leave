@@ -46,11 +46,14 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
     { label: "Applications", href: "/authorization/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
+  CAG: [
+    { label: "CAG Review Queue", href: "/cag/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
   SYSTEM_ADMIN: [
     { label: "Leave Types", href: "/admin/leave-types" },
     { label: "Leave Policies", href: "/admin/leave-policies" },
     { label: "Person Types", href: "/admin/person-types" },
-    { label: "Holidays", href: "/admin/holidays" },
     { label: "Users", href: "/admin/users" },
     { label: "Organization", href: "/admin/organization" },
     { label: "Reports", href: "/admin/reports" },
@@ -71,7 +74,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navItems = user
     ? [
         ...dedupeByHref(allUserRoles(user).flatMap((r) => navByRole[r] ?? [])),
-        { label: "Settings", href: "/settings" },
+        ...(allUserRoles(user).includes("SYSTEM_ADMIN")
+          ? [{ label: "Settings", href: "/settings" }]
+          : []),
       ]
     : [];
 

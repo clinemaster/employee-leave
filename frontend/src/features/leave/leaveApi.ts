@@ -146,6 +146,29 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
+    // CAG review — mandatory stand-in for Section B1 for applicants whose
+    // role requires it (see LeaveApplication.requires_cag_review).
+    // `decision: true` = recommended (defaulted server-side).
+    cagReviewLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/cag-review/`, method: "POST", body }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "LeaveApplication", id },
+        { type: "LeaveApplications", id: "LIST" },
+        "Dashboard",
+      ],
+    }),
+
+    // CAG rejection — terminal, `comments` (rejection reason) is mandatory
+    // (enforced server-side).
+    cagRejectLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/cag-reject/`, method: "POST", body }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "LeaveApplication", id },
+        { type: "LeaveApplications", id: "LIST" },
+        "Dashboard",
+      ],
+    }),
+
     // Section B2 — HR_ADMIN. `decision: true` = verified.
     verifyLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
       query: ({ id, ...body }) => ({ url: `leave-applications/${id}/verify/`, method: "POST", body }),
@@ -190,9 +213,9 @@ export const leaveApi = baseApi.injectEndpoints({
       providesTags: (_result, _error, id) => [{ type: "AuditTrail", id }],
     }),
 
-    // Server-authoritative working-days calculation (excludes weekends +
-    // holidays). Used for a labeled "preview" before/at submit time; the
-    // definitive count is `total_working_days` on the saved application.
+    // Server-authoritative working-days calculation (excludes weekends).
+    // Used for a labeled "preview" before/at submit time; the definitive
+    // count is `total_working_days` on the saved application.
     previewWorkingDays: builder.mutation<{ working_days: number }, { start_date: string; last_date: string }>({
       query: ({ start_date, last_date }) => ({
         url: "working-days-preview/",
@@ -210,6 +233,8 @@ export const {
   useUpdateLeaveApplicationMutation,
   useSubmitLeaveApplicationMutation,
   useRecommendLeaveApplicationMutation,
+  useCagReviewLeaveApplicationMutation,
+  useCagRejectLeaveApplicationMutation,
   useReturnLeaveApplicationMutation,
   useVerifyLeaveApplicationMutation,
   useApproveLeaveApplicationMutation,

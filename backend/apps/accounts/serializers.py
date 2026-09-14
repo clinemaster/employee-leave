@@ -38,7 +38,14 @@ class NaotTokenObtainPairSerializer(TokenObtainPairSerializer):
 
     def validate(self, attrs):
         data = super().validate(attrs)
-        data['user'] = UserSerializer(self.user).data
+        # super().validate() leaves self.user as a plain fetch with no
+        # select_related/prefetch_related, but UserSerializer reads 7 FK
+        # *_name fields plus additional_roles — without this, each one is a
+        # separate query on every login.
+        user = User.objects.select_related(
+            'department', 'division', 'support_division', 'work_station', 'section', 'unit', 'designation',
+        ).prefetch_related('additional_roles').get(pk=self.user.pk)
+        data['user'] = UserSerializer(user).data
         return data
 
 
@@ -70,6 +77,7 @@ class UserSerializer(serializers.ModelSerializer):
             'division', 'division_name', 'support_division', 'support_division_name',
             'section', 'section_name', 'unit', 'unit_name', 'manager',
             'phone_number', 'date_of_first_appointment', 'is_active',
+            'vote_code', 'sub_vote',
             'mfa_enabled',
         ]
         # mfa_secret is deliberately never listed here — not even write_only —
@@ -97,6 +105,7 @@ class UserWriteSerializer(serializers.ModelSerializer):
             'designation', 'work_station', 'department', 'division', 'support_division',
             'section', 'unit', 'manager',
             'phone_number', 'date_of_first_appointment', 'is_active',
+            'vote_code', 'sub_vote',
         ]
         read_only_fields = ['id']
 

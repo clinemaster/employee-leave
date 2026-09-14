@@ -76,6 +76,22 @@ def sysadmin_user(make_user):
 
 
 @pytest.fixture
+def cag_user(make_user):
+    return make_user(username='cag1', full_name='CAG Reviewer', check_number='CAG-001', role=Role.CAG)
+
+
+@pytest.fixture
+def other_cag_user(make_user):
+    return make_user(username='cag2', full_name='Other CAG Reviewer', check_number='CAG-002', role=Role.CAG)
+
+
+@pytest.fixture
+def hod_applicant_user(make_user):
+    """A Head of Department applying for their own leave -- must route through CAG, not the normal HOD stage."""
+    return make_user(username='hodapp1', full_name='HOD Applicant', check_number='HODAPP-001', role=Role.HEAD_OF_DEPARTMENT)
+
+
+@pytest.fixture
 def employee_user(make_user, hod_user):
     return make_user(username='emp1', full_name='Employee One', check_number='EMP-001', role=Role.EMPLOYEE, manager=hod_user)
 
@@ -112,6 +128,20 @@ def draft_application(db, employee_user, leave_type):
         employee=employee_user,
         leave_type=leave_type,
         full_name=employee_user.full_name,
+        start_date=datetime.date(2026, 1, 5),  # Monday
+        last_date=datetime.date(2026, 1, 9),   # Friday, no holidays -> 5 working days
+    )
+    return app
+
+
+@pytest.fixture
+def hod_applicant_draft_application(db, hod_applicant_user, leave_type):
+    """A DRAFT application from an applicant whose role requires CAG review."""
+    from apps.leave.models import LeaveApplication
+    app = LeaveApplication.objects.create(
+        employee=hod_applicant_user,
+        leave_type=leave_type,
+        full_name=hod_applicant_user.full_name,
         start_date=datetime.date(2026, 1, 5),  # Monday
         last_date=datetime.date(2026, 1, 9),   # Friday, no holidays -> 5 working days
     )

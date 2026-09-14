@@ -12,13 +12,15 @@ from rest_framework.views import APIView
 from apps.audit.models import AuditLog
 from apps.documents.models import LeaveDocument
 
-from .models import Holiday, LeaveApplication, LeaveBalance, LeavePolicy, LeaveType, PersonType
+from .models import (
+    LOCATION_BY_STATUS, LeaveApplication, LeaveBalance, LeavePolicy, LeaveType, PersonType,
+)
 from .permissions import (
     CanAccessLeaveApplication, IsSystemAdmin, assert_can_edit_fields,
     can_view_application, visible_queryset_for,
 )
 from .serializers import (
-    HolidaySerializer, LeaveApplicationSerializer, LeaveApplicationWriteSerializer,
+    LeaveApplicationSerializer, LeaveApplicationWriteSerializer,
     LeaveBalanceSerializer, LeavePolicySerializer, LeaveTypeSerializer,
     PersonTypeSerializer, WorkflowActionSerializer,
     WorkingDaysPreviewResponseSerializer, WorkingDaysPreviewSerializer,
@@ -136,12 +138,6 @@ class PersonTypeViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
         return Response(PersonTypeSerializer(reordered, many=True).data)
 
 
-class HolidayViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
-    queryset = Holiday.objects.all()
-    serializer_class = HolidaySerializer
-    filterset_fields = ['is_recurring']
-
-
 class LeavePolicyViewSet(viewsets.ModelViewSet):
     """
     Admin-only CRUD for annual-entitlement policy rules (spec section 9's
@@ -232,13 +228,22 @@ class WorkingDaysPreviewView(APIView):
 
 class _AuditLogSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.full_name', read_only=True)
+    previous_location = serializers.SerializerMethodField()
+    new_location = serializers.SerializerMethodField()
 
     class Meta:
         model = AuditLog
         fields = [
             'id', 'application', 'user', 'user_name', 'role', 'action',
-            'previous_status', 'new_status', 'timestamp', 'comments',
+            'previous_status', 'new_status', 'previous_location', 'new_location',
+            'timestamp', 'comments',
         ]
+
+    def get_previous_location(self, obj):
+        return LOCATION_BY_STATUS.get(obj.previous_status, obj.previous_status)
+
+    def get_new_location(self, obj):
+        return LOCATION_BY_STATUS.get(obj.new_status, obj.new_status)
 
 
 class _LeaveDocumentSerializer(serializers.ModelSerializer):
@@ -322,6 +327,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             decision_field_map = {
                 'recommend': 'recommended', 'verify': 'verified',
                 'approve': 'approved', 'deny': 'approved',
+                'cag_review': 'recommended', 'cag_reject': 'recommended',
             }
             obj = getattr(application, section_serializer_field, None)
             if obj is None:
@@ -332,7 +338,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             obj.signature_name = data.get('signature_name', '')
             obj.signature_designation = data.get('signature_designation', '')
             decision_value = data['decision']
-            if action_name == 'deny':
+            if action_name in ('deny', 'cag_reject'):
                 decision_value = False
             setattr(obj, decision_field_map.get(action_name, 'recommended'), decision_value)
             obj.save()
@@ -356,6 +362,23 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='return')
     def return_application(self, request, pk=None):
         return self._do_transition(request, pk, 'return_to_employee')
+
+    @action(detail=True, methods=['post'], url_path='cag-review')
+    def cag_review(self, request, pk=None):
+        """CAG recommends: PENDING_CAG_REVIEW -> CAG_RECOMMENDED -> (auto) PENDING_HR_REVIEW."""
+        from .models import LeaveCAGReview
+        data = request.data.copy()
+        data.setdefault('decision', True)
+        request._full_data = data
+        return self._do_transition(request, pk, 'cag_review', 'cag_review', LeaveCAGReview)
+
+    @action(detail=True, methods=['post'], url_path='cag-reject')
+    def cag_reject(self, request, pk=None):
+        """CAG rejects: PENDING_CAG_REVIEW -> DENIED (terminal). Reason is mandatory."""
+        from .models import LeaveCAGReview
+        if not (request.data.get('comments') or '').strip():
+            raise ValidationError({'comments': 'A rejection reason is required.'})
+        return self._do_transition(request, pk, 'cag_reject', 'cag_review', LeaveCAGReview)
 
     @action(detail=True, methods=['post'])
     def verify(self, request, pk=None):

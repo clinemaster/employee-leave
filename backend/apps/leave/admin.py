@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from .models import (
-    LeaveType, Holiday, LeaveApplication, LeaveDependant,
+    LeaveType, LeaveApplication, LeaveDependant,
     LeaveRecommendation, LeaveHRReview, LeaveApproval, LeaveBalance,
     LeavePolicy, PersonType, TravelRoute, TravelRoutePassenger,
     TaxiExpense, MizigoItem,
@@ -20,13 +20,6 @@ class PersonTypeAdmin(admin.ModelAdmin):
     list_display = ('name', 'code', 'is_active', 'sort_order')
     search_fields = ('name', 'code')
     list_filter = ('is_active',)
-
-
-@admin.register(Holiday)
-class HolidayAdmin(admin.ModelAdmin):
-    list_display = ('name', 'date', 'is_recurring')
-    list_filter = ('is_recurring',)
-    search_fields = ('name',)
 
 
 class LeaveDependantInline(admin.TabularInline):

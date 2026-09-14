@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useState, type FormEvent } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAppDispatch } from "@/store/hooks";
 import { setCredentials } from "@/store/slices/authSlice";
@@ -165,8 +166,14 @@ function LoginForm() {
 function TitleBlock() {
   return (
     <div className="mb-8 text-center">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/naot-badge.png" alt="NAOT" className="mx-auto mb-4 h-28 w-28 object-contain" />
+      <Image
+        src="/naot-badge.png"
+        alt="NAOT"
+        width={112}
+        height={112}
+        priority
+        className="mx-auto mb-4 h-28 w-28 object-contain"
+      />
       <p className="text-lg text-gray-600">The United Republic of Tanzania</p>
       <p className="text-lg font-semibold text-gray-800">National Audit Office</p>
       <p className="text-2xl font-bold text-gray-900">Leave Management System</p>
@@ -196,13 +203,15 @@ function LoginCarousel() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-gray-900">
       {CAROUSEL_SLIDES.map((src, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <Image
           key={src}
           src={src}
           alt=""
+          fill
+          sizes="(min-width: 768px) 50vw, 0px"
+          priority={i === 0}
           aria-hidden={i !== index}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ease-in-out ${
+          className={`object-cover transition-opacity duration-1000 ease-in-out ${
             i === index ? "opacity-100" : "opacity-0"
           }`}
         />
@@ -232,8 +241,7 @@ function LoginShell({ children }: { children: React.ReactNode }) {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gray-50 px-4 py-10">
       <div aria-hidden="true" className="absolute inset-0">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/emblem.png" alt="" className="h-full w-full object-cover" />
+        <Image src="/emblem.png" alt="" fill priority sizes="100vw" className="object-cover" />
         <div className="absolute inset-0 bg-white/70" />
       </div>
 

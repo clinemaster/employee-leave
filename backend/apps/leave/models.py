@@ -22,31 +22,13 @@ class LeaveType(models.Model):
         return self.name
 
 
-class Holiday(models.Model):
-    """Admin-manageable public holiday, used for working-day calculations."""
-    date = models.DateField()
-    name = models.CharField(max_length=255)
-    is_recurring = models.BooleanField(
-        default=False, help_text='Recurs every year on this month/day (e.g. Christmas).'
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['date']
-        constraints = [
-            models.UniqueConstraint(fields=['date', 'name'], name='uniq_holiday_date_name')
-        ]
-
-    def __str__(self):
-        return f'{self.name} ({self.date})'
-
-
 class ApplicationStatus(models.TextChoices):
     DRAFT = 'DRAFT', 'Draft'
     SUBMITTED = 'SUBMITTED', 'Submitted'
     PENDING_HOD_REVIEW = 'PENDING_HOD_REVIEW', 'Pending HOD Review'
     HOD_RECOMMENDED = 'HOD_RECOMMENDED', 'HOD Recommended'
+    PENDING_CAG_REVIEW = 'PENDING_CAG_REVIEW', 'Pending CAG Review'
+    CAG_RECOMMENDED = 'CAG_RECOMMENDED', 'CAG Recommended'
     RETURNED_TO_EMPLOYEE = 'RETURNED_TO_EMPLOYEE', 'Returned to Employee'
     PENDING_HR_REVIEW = 'PENDING_HR_REVIEW', 'Pending HR Review'
     HR_VERIFIED = 'HR_VERIFIED', 'HR Verified'
@@ -57,6 +39,52 @@ class ApplicationStatus(models.TextChoices):
     PDF_GENERATED = 'PDF_GENERATED', 'PDF Generated'
     COMPLETED = 'COMPLETED', 'Completed'
     ARCHIVED = 'ARCHIVED', 'Archived'
+
+
+# Maps a workflow `status` to the human-facing "Current Location"/short
+# status label. Module-level (not a stored field) so both
+# LeaveApplication.current_location and the audit-trail serializer (which
+# needs to label each transition's previous/new status the same way) share
+# one source of truth — see requirements doc "Current Location must be
+# derived from the workflow state, not stored as an independently editable
+# field".
+LOCATION_BY_STATUS = {
+    ApplicationStatus.DRAFT: 'Employee',
+    ApplicationStatus.SUBMITTED: 'HOD',
+    ApplicationStatus.PENDING_HOD_REVIEW: 'HOD',
+    ApplicationStatus.HOD_RECOMMENDED: 'HR',
+    ApplicationStatus.PENDING_CAG_REVIEW: 'CAG',
+    ApplicationStatus.CAG_RECOMMENDED: 'HR',
+    ApplicationStatus.RETURNED_TO_EMPLOYEE: 'Employee — Action Required',
+    ApplicationStatus.PENDING_HR_REVIEW: 'HR',
+    ApplicationStatus.HR_VERIFIED: 'Authorizing Officer',
+    ApplicationStatus.RETURNED_TO_HOD: 'HOD — Action Required',
+    ApplicationStatus.PENDING_AUTHORIZATION: 'Authorizing Officer',
+    ApplicationStatus.APPROVED: 'Completed',
+    ApplicationStatus.DENIED: 'Completed',
+    ApplicationStatus.PDF_GENERATED: 'Completed',
+    ApplicationStatus.COMPLETED: 'Completed',
+    ApplicationStatus.ARCHIVED: 'Completed',
+}
+
+STATUS_LABEL_BY_STATUS = {
+    ApplicationStatus.DRAFT: 'Draft',
+    ApplicationStatus.SUBMITTED: 'Under Review',
+    ApplicationStatus.PENDING_HOD_REVIEW: 'Under Review',
+    ApplicationStatus.HOD_RECOMMENDED: 'Under Review',
+    ApplicationStatus.PENDING_CAG_REVIEW: 'Under Review',
+    ApplicationStatus.CAG_RECOMMENDED: 'Under Review',
+    ApplicationStatus.RETURNED_TO_EMPLOYEE: 'Returned',
+    ApplicationStatus.PENDING_HR_REVIEW: 'Under Review',
+    ApplicationStatus.HR_VERIFIED: 'Under Review',
+    ApplicationStatus.RETURNED_TO_HOD: 'Returned',
+    ApplicationStatus.PENDING_AUTHORIZATION: 'Awaiting Authorization',
+    ApplicationStatus.APPROVED: 'Approved',
+    ApplicationStatus.DENIED: 'Rejected',
+    ApplicationStatus.PDF_GENERATED: 'Approved',
+    ApplicationStatus.COMPLETED: 'Approved',
+    ApplicationStatus.ARCHIVED: 'Approved',
+}
 
 
 class LeaveRecommendation(models.Model):
@@ -78,6 +106,30 @@ class LeaveRecommendation(models.Model):
 
     def __str__(self):
         return f'Recommendation #{self.pk}'
+
+
+class LeaveCAGReview(models.Model):
+    """
+    CAG review stage: mandatory for applicants holding one of
+    accounts.models.CAG_APPLICANT_ROLES, standing in for Section B1 (HOD
+    recommendation) for those roles. See apps.leave.workflow for routing.
+    """
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='leave_cag_reviews',
+    )
+    recommended = models.BooleanField(null=True, blank=True)
+    comments = models.TextField(blank=True)
+
+    signature_name = models.CharField(max_length=255, blank=True)
+    signature_designation = models.CharField(max_length=255, blank=True)
+    signature_date = models.DateField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'CAG Review #{self.pk}'
 
 
 class LeaveHRReview(models.Model):
@@ -171,6 +223,10 @@ class LeaveApplication(models.Model):
         LeaveRecommendation, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='application',
     )
+    cag_review = models.OneToOneField(
+        LeaveCAGReview, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='application',
+    )
     hr_review = models.OneToOneField(
         LeaveHRReview, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='application',
@@ -194,6 +250,30 @@ class LeaveApplication(models.Model):
 
     def __str__(self):
         return self.application_number or f'Draft application #{self.pk}'
+
+    # --- Current location / status label (derived, read-only) -------------
+    # Deliberately NOT a stored field: it must always be an exact function of
+    # `status` so nobody can set it independently of the workflow (see
+    # requirements doc "Current Location must be derived from the workflow
+    # state, not stored as an independently editable field").
+    @property
+    def current_location(self):
+        return LOCATION_BY_STATUS.get(self.status, self.status)
+
+    @property
+    def current_status_label(self):
+        return STATUS_LABEL_BY_STATUS.get(self.status, self.status)
+
+    @property
+    def requires_cag_review(self):
+        """
+        True if this applicant's role routes through CAG review instead of
+        the normal HOD stage (see apps.leave.permissions.needs_cag_review).
+        Derived from the employee's role, never stored, so it can't drift
+        from the routing rule itself.
+        """
+        from .permissions import needs_cag_review
+        return needs_cag_review(self.employee)
 
     def save(self, *args, **kwargs):
         if not self.application_number:

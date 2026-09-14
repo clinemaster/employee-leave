@@ -13,13 +13,13 @@ Role -> access matrix (spec):
                          (vacant post) a fallback HR Admin/Authorizing Officer.
   HR_ADMIN               read-only A+B1, edit Section B2 only.
   AUTHORIZING_OFFICER    read-only A+B1+B2, edit Section C only.
-  SYSTEM_ADMIN            manage leave types, holidays, org units, users (not the
+  SYSTEM_ADMIN            manage leave types, org units, users (not the
                           workflow sections themselves).
 """
 from rest_framework import permissions
 from rest_framework.exceptions import PermissionDenied
 
-from apps.accounts.models import Role
+from apps.accounts.models import CAG_APPLICANT_ROLES, Role
 
 HOD_ROLES = {
     Role.HEAD_OF_DEPARTMENT, Role.HEAD_OF_DIVISION, Role.HEAD_OF_SUPPORT_DIVISION,
@@ -44,6 +44,7 @@ SECTION_A_FIELDS = {
     'travel_routes', 'taxi_expenses', 'mizigo_items',
 }
 SECTION_B1_FIELDS = {'recommendation'}  # LeaveRecommendation nested writable fields
+SECTION_CAG_FIELDS = {'cag_review'}  # LeaveCAGReview nested writable fields
 SECTION_B2_FIELDS = {'hr_review'}  # LeaveHRReview nested writable fields
 SECTION_C_FIELDS = {'approval'}  # LeaveApproval nested writable fields
 
@@ -66,6 +67,21 @@ def is_system_admin(user):
 
 def is_employee_role(user):
     return user.is_authenticated and user.has_role(Role.EMPLOYEE)
+
+
+def is_cag_reviewer(user):
+    return user.is_authenticated and user.has_role(Role.CAG)
+
+
+def needs_cag_review(employee):
+    """
+    True if this applicant's role requires the mandatory CAG review stage
+    instead of the normal HOD stage (spec: AUTHORIZING_OFFICER,
+    HEAD_OF_DEPARTMENT, HEAD_OF_SUPPORT_DIVISION, HEAD_OF_DIVISION). Checked
+    against the employee's full role set (base + additional_roles), same as
+    every other role gate in this module.
+    """
+    return any(employee.has_role(r) for r in CAG_APPLICANT_ROLES)
 
 
 def matched_head_for(employee):
@@ -144,6 +160,8 @@ def can_view_application(user, application):
         return True
     if is_hod(user) and routed_hod_for(application) is not None and routed_hod_for(application).id == user.id:
         return True
+    if is_cag_reviewer(user) and needs_cag_review(application.employee):
+        return True
     if is_hr_admin(user) or is_authorizing_officer(user):
         return True
     return False
@@ -179,6 +197,11 @@ def visible_queryset_for(user, queryset):
 
     if is_system_admin(user) or is_hr_admin(user) or is_authorizing_officer(user):
         return queryset
+    if is_cag_reviewer(user):
+        cag_applicants = Q(employee__role__in=CAG_APPLICANT_ROLES) | Q(
+            employee__additional_roles__role__in=CAG_APPLICANT_ROLES
+        )
+        return queryset.filter(Q(employee=user) | cag_applicants).distinct()
     if is_hod(user):
         return queryset.filter(Q(employee=user) | hod_scope_q(user))
     return queryset.filter(employee=user)
@@ -212,6 +235,13 @@ def assert_can_edit_fields(user, application, incoming_fields):
         reviewer = effective_reviewer_for(application)
         if reviewer is None or reviewer.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
+        return
+
+    if incoming_fields and incoming_fields <= SECTION_CAG_FIELDS:
+        if not is_cag_reviewer(user):
+            raise PermissionDenied('Only a CAG reviewer may act here.')
+        if not needs_cag_review(application.employee):
+            raise PermissionDenied('This application is not routed to CAG.')
         return
 
     if is_hr_admin(user):

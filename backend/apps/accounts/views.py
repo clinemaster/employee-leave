@@ -46,15 +46,22 @@ class LoginView(TokenObtainPairView):
         )},
     )
     def post(self, request, *args, **kwargs):
+        # Cheap indexed lookup (no password hashing) to see whether this
+        # account even has MFA on, before paying for a hash comparison. Most
+        # logins are non-MFA, so this keeps them to the single authenticate()
+        # call `super().post()` already does via the token serializer instead
+        # of hashing the password twice per request.
         username = request.data.get('username')
         password = request.data.get('password')
         if username and password:
-            user = authenticate(request, username=username, password=password)
-            if user is not None and getattr(user, 'mfa_enabled', False):
-                return Response({
-                    'mfa_required': True,
-                    'mfa_token': _issue_challenge_token(user),
-                }, status=status.HTTP_200_OK)
+            mfa_on = User.objects.filter(username=username, mfa_enabled=True).exists()
+            if mfa_on:
+                user = authenticate(request, username=username, password=password)
+                if user is not None and user.mfa_enabled:
+                    return Response({
+                        'mfa_required': True,
+                        'mfa_token': _issue_challenge_token(user),
+                    }, status=status.HTTP_200_OK)
         return super().post(request, *args, **kwargs)
 
 

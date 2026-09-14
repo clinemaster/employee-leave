@@ -41,6 +41,27 @@ _TEMPLATES = {
         'your recommendation (Section B1).\n\n'
         '- NAOT Digital Leave Management System',
     ),
+    'submit_cag': (
+        'Leave application {application_number} awaiting your CAG review',
+        'Dear {recipient_name},\n\n'
+        'New leave application {application_number} from {employee_name} is '
+        'awaiting your CAG review.\n\n'
+        '- NAOT Digital Leave Management System',
+    ),
+    'cag_review': (
+        'Leave application {application_number} recommended by CAG',
+        'Dear {recipient_name},\n\n'
+        'Your leave application {application_number} has been recommended by '
+        'CAG and forwarded to HR.\n\n'
+        '- NAOT Digital Leave Management System',
+    ),
+    'cag_reject': (
+        'Leave application {application_number} rejected by CAG',
+        'Dear {recipient_name},\n\n'
+        'Your leave application {application_number} has been rejected by CAG. '
+        'Reason: {comments}\n\n'
+        '- NAOT Digital Leave Management System',
+    ),
     'recommend': (
         'Leave application {application_number} recommended',
         'Dear {recipient_name},\n\n'

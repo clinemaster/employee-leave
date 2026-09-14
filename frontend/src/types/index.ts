@@ -12,7 +12,18 @@ export type Role =
   | "HEAD_OF_UNIT"
   | "HR_ADMIN"
   | "AUTHORIZING_OFFICER"
+  | "CAG"
   | "SYSTEM_ADMIN";
+
+// Applicant roles whose leave applications must be routed through CAG
+// review instead of the normal HOD stage (see backend
+// apps.accounts.models.CAG_APPLICANT_ROLES / LeaveApplication.requires_cag_review).
+export const CAG_APPLICANT_ROLES: Role[] = [
+  "AUTHORIZING_OFFICER",
+  "HEAD_OF_DEPARTMENT",
+  "HEAD_OF_SUPPORT_DIVISION",
+  "HEAD_OF_DIVISION",
+];
 
 // Any of the five "line manager" roles that review Section B1.
 export const HOD_ROLES: Role[] = [
@@ -52,6 +63,8 @@ export interface User {
   unit_name?: string | null;
   manager?: number | null;
   phone_number?: string | null;
+  vote_code?: string | null;
+  sub_vote?: string | null;
   date_of_first_appointment?: string | null;
   is_active: boolean;
   mfa_enabled?: boolean;
@@ -77,6 +90,8 @@ export type LeaveStatus =
   | "SUBMITTED"
   | "PENDING_HOD_REVIEW"
   | "HOD_RECOMMENDED"
+  | "PENDING_CAG_REVIEW"
+  | "CAG_RECOMMENDED"
   | "RETURNED_TO_EMPLOYEE"
   | "PENDING_HR_REVIEW"
   | "HR_VERIFIED"
@@ -94,13 +109,6 @@ export interface LeaveType {
   code: string;
   is_active: boolean;
   sort_order: number;
-}
-
-export interface Holiday {
-  id: number;
-  date: string; // ISO date
-  name: string;
-  is_recurring: boolean;
 }
 
 export interface OrgUnit {
@@ -141,6 +149,14 @@ export interface ApprovalSection {
   created_at?: string;
 }
 
+export interface CAGReview {
+  recommended: boolean;
+  comments?: string;
+  signature_name?: string;
+  signature_designation?: string;
+  created_at?: string;
+}
+
 // Section A fields — editable by the applicant only, and only while
 // status is DRAFT or RETURNED_TO_EMPLOYEE (enforced server-side).
 export interface LeaveApplication {
@@ -174,7 +190,16 @@ export interface LeaveApplication {
   mizigo_grand_total?: number;
   travel_payment_grand_total?: number;
   status: LeaveStatus;
+  // Derived server-side from `status` — see backend LeaveApplication.
+  // current_location/current_status_label. Never independently editable.
+  current_location?: string;
+  current_status_label?: string;
+  // Derived server-side from the employee's role — see backend
+  // LeaveApplication.requires_cag_review. True if this application must be
+  // routed through CAG review instead of the normal HOD stage.
+  requires_cag_review?: boolean;
   recommendation?: LeaveRecommendation | null;
+  cag_review?: CAGReview | null;
   hr_review?: HRReview | null;
   approval?: ApprovalSection | null;
   working_days_preview?: number;
@@ -199,6 +224,8 @@ export interface AuditLogEntry {
   action: string;
   previous_status: LeaveStatus | null;
   new_status: LeaveStatus;
+  previous_location?: string | null;
+  new_location?: string;
   timestamp: string;
   comments?: string;
 }
