@@ -110,7 +110,7 @@ export function WorkflowHistoryCard({ applicationId }: { applicationId: number }
                 {" · "}
                 {formatDateTime(entry.timestamp)}
               </p>
-              {entry.comments ? <p className="mt-1 text-xs text-gray-600">"{entry.comments}"</p> : null}
+              {entry.comments ? <p className="mt-1 text-xs text-gray-600">&quot;{entry.comments}&quot;</p> : null}
             </li>
           ))}
         </ol>
