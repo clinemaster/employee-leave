@@ -148,6 +148,7 @@ describe("LeaveApplicationForm", () => {
     await user.selectOptions(screen.getByLabelText("Leave Type"), "1");
     await user.type(screen.getByLabelText("Start Date"), "2026-02-01");
     await user.type(screen.getByLabelText("End Date"), "2026-02-05");
+    await user.click(screen.getByLabelText("Request travel assistance"));
 
     // Step 2 -> 3 (Dependants)
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -162,7 +163,7 @@ describe("LeaveApplicationForm", () => {
 
     // Step 3 -> 4 (Travel Payment Request)
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(await screen.findByRole("heading", { name: "Travel Payment Request" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Travel Route Payment Request" })).toBeInTheDocument();
 
     // Step 4 -> 5 (Review)
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -179,10 +180,11 @@ describe("LeaveApplicationForm", () => {
     await user.selectOptions(screen.getByLabelText("Leave Type"), "1");
     await user.type(screen.getByLabelText("Start Date"), "2026-02-01");
     await user.type(screen.getByLabelText("End Date"), "2026-02-05");
+    await user.click(screen.getByLabelText("Request travel assistance"));
     await user.click(screen.getByRole("button", { name: "Next" })); // -> Dependants
     await screen.findByRole("heading", { name: "Dependants" });
     await user.click(screen.getByRole("button", { name: "Next" })); // -> Travel Payment Request
-    await screen.findByRole("heading", { name: "Travel Payment Request" });
+    await screen.findByRole("heading", { name: "Travel Route Payment Request" });
   }
 
   it("computes route totals live from Idadi, fare, and trip type (worked examples)", async () => {
