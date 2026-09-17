@@ -71,6 +71,8 @@ export const baseApi = createApi({
     "LeaveApplications",
     "LeaveApplication",
     "Dashboard",
+    "LeaveBalances",
+    "OrgStructure",
     "LeaveTypes",
     "LeavePolicies",
     "PersonTypes",

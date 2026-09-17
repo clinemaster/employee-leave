@@ -4,7 +4,7 @@ import type { PaginatedResponse, User } from "@/types";
 // SYSTEM_ADMIN write, self-read via /me/ (see /API.md "Users").
 export const usersApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
-    getUsers: builder.query<PaginatedResponse<User>, { page?: number } | void>({
+    getUsers: builder.query<PaginatedResponse<User>, { page?: number; search?: string } | void>({
       query: (params) => ({ url: "users/", params: params ?? undefined }),
       providesTags: (result) =>
         result

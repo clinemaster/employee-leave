@@ -61,119 +61,119 @@ export const orgApi = baseApi.injectEndpoints({
     getDepartments: builder.query<Department[], void>({
       query: () => "departments/",
       transformResponse: toArray<Department>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createDepartment: builder.mutation<Department, Partial<Department>>({
       query: (body) => ({ url: "departments/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateDepartment: builder.mutation<Department, Partial<Department> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `departments/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     deleteDepartment: builder.mutation<void, number>({
       query: (id) => ({ url: `departments/${id}/`, method: "DELETE" }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
 
     getDivisions: builder.query<Division[], void>({
       query: () => "divisions/",
       transformResponse: toArray<Division>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createDivision: builder.mutation<Division, Partial<Division>>({
       query: (body) => ({ url: "divisions/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateDivision: builder.mutation<Division, Partial<Division> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `divisions/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     deleteDivision: builder.mutation<void, number>({
       query: (id) => ({ url: `divisions/${id}/`, method: "DELETE" }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
 
     getSupportDivisions: builder.query<SupportDivision[], void>({
       query: () => "support-divisions/",
       transformResponse: toArray<SupportDivision>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createSupportDivision: builder.mutation<SupportDivision, Partial<SupportDivision>>({
       query: (body) => ({ url: "support-divisions/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateSupportDivision: builder.mutation<SupportDivision, Partial<SupportDivision> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `support-divisions/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     deleteSupportDivision: builder.mutation<void, number>({
       query: (id) => ({ url: `support-divisions/${id}/`, method: "DELETE" }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
 
     getSections: builder.query<Section[], void>({
       query: () => "sections/",
       transformResponse: toArray<Section>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createSection: builder.mutation<Section, Partial<Section>>({
       query: (body) => ({ url: "sections/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateSection: builder.mutation<Section, Partial<Section> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `sections/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
 
     getUnits: builder.query<Unit[], void>({
       query: () => "units/",
       transformResponse: toArray<Unit>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createUnit: builder.mutation<Unit, Partial<Unit>>({
       query: (body) => ({ url: "units/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateUnit: builder.mutation<Unit, Partial<Unit> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `units/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
 
     getWorkStations: builder.query<WorkStation[], void>({
       query: () => "work-stations/",
       transformResponse: toArray<WorkStation>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createWorkStation: builder.mutation<WorkStation, Partial<WorkStation>>({
       query: (body) => ({ url: "work-stations/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateWorkStation: builder.mutation<WorkStation, Partial<WorkStation> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `work-stations/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     deleteWorkStation: builder.mutation<void, number>({
       query: (id) => ({ url: `work-stations/${id}/`, method: "DELETE" }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
 
     getDesignations: builder.query<Designation[], void>({
       query: () => "designations/",
       transformResponse: toArray<Designation>,
-      providesTags: ["Dashboard"],
+      providesTags: ["OrgStructure"],
     }),
     createDesignation: builder.mutation<Designation, Partial<Designation>>({
       query: (body) => ({ url: "designations/", method: "POST", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     updateDesignation: builder.mutation<Designation, Partial<Designation> & { id: number }>({
       query: ({ id, ...body }) => ({ url: `designations/${id}/`, method: "PATCH", body }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
     deleteDesignation: builder.mutation<void, number>({
       query: (id) => ({ url: `designations/${id}/`, method: "DELETE" }),
-      invalidatesTags: ["Dashboard"],
+      invalidatesTags: ["OrgStructure"],
     }),
   }),
 });

@@ -1,7 +1,8 @@
 from django.db import transaction
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
-from rest_framework import serializers, status, viewsets
+from rest_framework import filters, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -159,7 +160,7 @@ class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return LeaveBalance.objects.none()
         user = self.request.user
-        qs = LeaveBalance.objects.all()
+        qs = LeaveBalance.objects.select_related('employee', 'leave_type')
         from .permissions import is_hr_admin, is_authorizing_officer, is_system_admin
         if is_hr_admin(user) or is_authorizing_officer(user) or is_system_admin(user):
             return qs
@@ -270,7 +271,18 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     /api/leave-applications/{id}/audit-trail/ GET
     """
     permission_classes = [IsAuthenticated, CanAccessLeaveApplication]
-    filterset_fields = ['status', 'leave_type', 'employee']
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = [
+        'status', 'leave_type', 'employee', 'check_number', 'personnel_file',
+        'division_department', 'station', 'start_date', 'last_date',
+    ]
+    # ?search= free-text match, on top of the exact filterset_fields above.
+    # Row visibility is already scoped by visible_queryset_for() below, so
+    # this only narrows within what the requesting user can already see.
+    search_fields = [
+        'application_number', 'full_name', 'check_number', 'personnel_file',
+        'employee__full_name', 'employee__check_number',
+    ]
     # Declared so the `throttle_scope=...` kwarg on individual @action
     # decorators (generate_pdf, upload_document) is a valid DRF initkwarg —
     # DRF's ViewSet.as_view() requires hasattr(cls, key) for every kwarg an
@@ -283,7 +295,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return LeaveApplication.objects.none()
         qs = LeaveApplication.objects.select_related(
-            'employee', 'leave_type', 'recommendation', 'hr_review', 'approval'
+            'employee', 'leave_type', 'recommendation', 'cag_review', 'hr_review', 'approval'
         ).prefetch_related(
             'dependants', 'travel_routes__passengers__person_type',
             'taxi_expenses', 'mizigo_items',
@@ -507,5 +519,5 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get'], url_path='audit-trail')
     def audit_trail(self, request, pk=None):
         application = self.get_object()
-        logs = application.audit_logs.all()
+        logs = application.audit_logs.select_related('user').all()
         return Response(_AuditLogSerializer(logs, many=True).data)

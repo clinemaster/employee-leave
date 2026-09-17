@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -58,7 +58,19 @@ function combinedRoles(role: Role, additionalRoles: Role[]): Role[] {
 // write). Roles/Active are inline actions; full profile editing opens a modal.
 export default function AdminUsersPage() {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useGetUsersQuery({ page });
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const { data, isLoading } = useGetUsersQuery({ page, search: search || undefined });
+
+  // Debounce the search box so every keystroke doesn't hit the API, and
+  // reset back to page 1 whenever the effective search term changes.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(id);
+  }, [searchInput]);
   const [createUser, { isLoading: isCreating }] = useCreateUserMutation();
   const [updateUser] = useUpdateUserMutation();
 
@@ -211,8 +223,19 @@ export default function AdminUsersPage() {
       </Card>
 
       <Card>
+        <div className="mb-4 max-w-sm">
+          <Label htmlFor="userSearch">Search</Label>
+          <Input
+            id="userSearch"
+            placeholder="Search by name, username, check number, or email"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+        </div>
         {isLoading ? (
           <p className="text-sm text-gray-500">Loading...</p>
+        ) : data && data.results.length === 0 ? (
+          <p className="text-sm text-gray-500">No users match your search.</p>
         ) : (
           <>
             <table className="min-w-full divide-y divide-gray-200 text-sm">

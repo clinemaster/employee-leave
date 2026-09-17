@@ -348,8 +348,14 @@ class LeaveBalanceSerializer(serializers.ModelSerializer):
     def get_computed_entitlement(self, obj):
         """What the policy engine would currently compute for this
         employee/leave_type — for comparison against the stored (possibly
-        HR-overridden) `entitlement` value."""
-        return compute_entitlement(obj.employee, obj.leave_type, period=obj.period)
+        HR-overridden) `entitlement` value.
+
+        Cached on the instance: both this field and is_entitlement_overridden
+        need it, and compute_entitlement() isn't free (queries LeavePolicy).
+        """
+        if not hasattr(obj, '_computed_entitlement_cache'):
+            obj._computed_entitlement_cache = compute_entitlement(obj.employee, obj.leave_type, period=obj.period)
+        return obj._computed_entitlement_cache
 
     @extend_schema_field(OpenApiTypes.BOOL)
     def get_is_entitlement_overridden(self, obj):

@@ -15,7 +15,7 @@ export const balancesApi = baseApi.injectEndpoints({
       query: (params) => ({ url: "leave-balances/", params: params ?? undefined }),
       transformResponse: (response: LeaveBalance[] | PaginatedResponse<LeaveBalance>) =>
         Array.isArray(response) ? response : response.results,
-      providesTags: ["Dashboard"],
+      providesTags: ["LeaveBalances"],
     }),
   }),
 });

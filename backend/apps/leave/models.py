@@ -542,6 +542,7 @@ class LeaveBalance(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        ordering = ['-period', 'employee_id', 'leave_type_id']
         constraints = [
             models.UniqueConstraint(
                 fields=['employee', 'leave_type', 'period'],

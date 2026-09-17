@@ -124,6 +124,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -134,6 +135,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -143,6 +145,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -155,6 +158,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -166,6 +170,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -176,6 +181,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -186,6 +192,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 
@@ -195,6 +202,7 @@ export const leaveApi = baseApi.injectEndpoints({
         { type: "LeaveApplication", id },
         { type: "LeaveApplications", id: "LIST" },
         "Dashboard",
+        "LeaveBalances",
       ],
     }),
 

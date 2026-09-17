@@ -1,6 +1,7 @@
 from django.contrib.auth import authenticate
+from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import PolymorphicProxySerializer, extend_schema
-from rest_framework import status, viewsets
+from rest_framework import filters, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -70,11 +71,19 @@ class UserViewSet(viewsets.ModelViewSet):
     /api/users/ — SYSTEM_ADMIN manages accounts.
     /api/users/me/ — any authenticated user reads their own profile.
     """
-    queryset = User.objects.filter(deleted_at__isnull=True)
+    # Mirrors NaotTokenObtainPairSerializer.validate()'s query shape — the
+    # UserSerializer reads 7 FK *_name fields plus additional_roles, so
+    # without this every list page is 1+8N queries.
+    queryset = User.objects.filter(deleted_at__isnull=True).select_related(
+        'department', 'division', 'support_division', 'work_station', 'section', 'unit', 'designation',
+    ).prefetch_related('additional_roles')
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = [
         'role', 'department', 'division', 'support_division', 'section', 'unit',
         'work_station', 'designation', 'is_active',
     ]
+    # ?search= matches any of these (DRF SearchFilter), on top of the exact
+    # filterset_fields above.
     search_fields = ['full_name', 'username', 'check_number', 'email']
 
     def get_serializer_class(self):

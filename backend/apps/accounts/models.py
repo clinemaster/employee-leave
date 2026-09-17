@@ -118,12 +118,20 @@ class User(AbstractUser):
         HEAD_OF_DEPARTMENT to review applications without losing the ability
         to submit their own as an employee.
         """
-        return self.role == role or self.additional_roles.filter(role=role).exists()
+        return role in self.all_roles
 
     @property
     def all_roles(self):
-        """The full set of roles this user holds (base + additional)."""
-        return {self.role} | set(self.additional_roles.values_list('role', flat=True))
+        """The full set of roles this user holds (base + additional).
+
+        Cached on the instance: permission checks call has_role() repeatedly
+        per request (DashboardStatsView alone tries up to 4 roles in
+        sequence), and request.user is the same instance for the whole
+        request, so without this each call re-queries additional_roles.
+        """
+        if not hasattr(self, '_all_roles_cache'):
+            self._all_roles_cache = {self.role} | set(self.additional_roles.values_list('role', flat=True))
+        return self._all_roles_cache
 
 
 class UserAdditionalRole(models.Model):

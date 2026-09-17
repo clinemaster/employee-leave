@@ -20,12 +20,18 @@ from .permissions import (
 
 
 def _counts(qs, status_map):
-    """status_map: {output_key: status or iterable of statuses}."""
+    """status_map: {output_key: status or iterable of statuses}.
+
+    One grouped query (status -> count) instead of one .count() per output
+    key — status_map's value sets are disjoint per call site, so each raw
+    per-status count is summed into exactly one output bucket.
+    """
+    per_status = dict(qs.values_list('status').annotate(count=Count('id')).values_list('status', 'count'))
     out = {}
     for key, statuses in status_map.items():
         if isinstance(statuses, str):
             statuses = (statuses,)
-        out[key] = qs.filter(status__in=statuses).count()
+        out[key] = sum(per_status.get(s, 0) for s in statuses)
     return out
 
 
