@@ -8,7 +8,8 @@ import { HOD_ROLES } from "@/types";
 export interface Permissions {
   canCreateLeaveApplication: boolean;
   canRecommend: boolean; // HOD/HOS/HOU — Section B1
-  canCagReview: boolean; // CAG — mandatory stand-in for Section B1 for the four leadership roles
+  canCagReview: boolean; // CAG — mandatory stand-in for Section B1 for the leadership roles (see CAG_APPLICANT_ROLES)
+  canAagReview: boolean; // AAG — mandatory stand-in for Section B1 for Division employees (see requires_aag_review)
   canVerify: boolean; // HR_ADMIN — Section B2
   canApprove: boolean; // AUTHORIZING_OFFICER — Section C
   canManageLeaveTypes: boolean;
@@ -26,11 +27,12 @@ function buildPermissions(roles: Role[]): Permissions {
     canCreateLeaveApplication: has("EMPLOYEE") || isHod, // any employee (incl. line managers) can apply
     canRecommend: isHod,
     canCagReview: has("CAG"),
+    canAagReview: has("AAG"),
     canVerify: has("HR_ADMIN"),
     canApprove: has("AUTHORIZING_OFFICER"),
     canManageLeaveTypes: has("SYSTEM_ADMIN"),
     canManageUsers: has("SYSTEM_ADMIN"),
-    canViewAllApplications: isHod || has("HR_ADMIN") || has("AUTHORIZING_OFFICER") || has("CAG") || has("SYSTEM_ADMIN"),
+    canViewAllApplications: isHod || has("HR_ADMIN") || has("AUTHORIZING_OFFICER") || has("CAG") || has("AAG") || has("SYSTEM_ADMIN"),
   };
 }
 
@@ -38,6 +40,7 @@ const emptyPermissions: Permissions = {
   canCreateLeaveApplication: false,
   canRecommend: false,
   canCagReview: false,
+  canAagReview: false,
   canVerify: false,
   canApprove: false,
   canManageLeaveTypes: false,
@@ -56,13 +59,16 @@ export function getPermissions(roles: Role[] | Role | null | undefined): Permiss
 export const roleHomeRoute: Record<Role, string> = {
   EMPLOYEE: "/employee/applications",
   HEAD_OF_DEPARTMENT: "/hod/applications",
-  HEAD_OF_DIVISION: "/hod/applications",
-  HEAD_OF_SUPPORT_DIVISION: "/hod/applications",
+  DAG: "/hod/applications",
   HEAD_OF_SECTION: "/hod/applications",
-  HEAD_OF_UNIT: "/hod/applications",
   HR_ADMIN: "/hr/applications",
   AUTHORIZING_OFFICER: "/authorization/applications",
   CAG: "/cag/applications",
+  AAG: "/aag/applications",
+  CHIEF_ACCOUNTANT: "/employee/applications",
+  DAHRM: "/employee/applications",
+  ADA: "/employee/applications",
+  CHIEF_EXTERNAL_AUDITOR: "/employee/applications",
   SYSTEM_ADMIN: "/admin/leave-types",
 };
 
@@ -72,13 +78,16 @@ export const roleHomeRoute: Record<Role, string> = {
 const allRoles: Role[] = [
   "EMPLOYEE",
   "HEAD_OF_DEPARTMENT",
-  "HEAD_OF_DIVISION",
-  "HEAD_OF_SUPPORT_DIVISION",
+  "DAG",
   "HEAD_OF_SECTION",
-  "HEAD_OF_UNIT",
   "HR_ADMIN",
   "AUTHORIZING_OFFICER",
   "CAG",
+  "AAG",
+  "CHIEF_ACCOUNTANT",
+  "DAHRM",
+  "ADA",
+  "CHIEF_EXTERNAL_AUDITOR",
   "SYSTEM_ADMIN",
 ];
 
@@ -88,5 +97,6 @@ export const routeRoleMap: { prefix: string; roles: Role[] }[] = [
   { prefix: "/hr", roles: ["HR_ADMIN", "SYSTEM_ADMIN"] },
   { prefix: "/authorization", roles: ["AUTHORIZING_OFFICER", "SYSTEM_ADMIN"] },
   { prefix: "/cag", roles: ["CAG", "SYSTEM_ADMIN"] },
+  { prefix: "/aag", roles: ["AAG", "SYSTEM_ADMIN"] },
   { prefix: "/admin", roles: ["SYSTEM_ADMIN"] },
 ];

@@ -14,19 +14,18 @@ class UserAdmin(DjangoUserAdmin):
     inlines = [UserAdditionalRoleInline]
     list_display = (
         'username', 'full_name', 'check_number', 'role', 'department',
-        'division', 'support_division', 'work_station', 'manager', 'is_active', 'is_staff',
+        'division', 'work_station', 'manager', 'is_active', 'is_staff',
     )
     list_filter = (
-        'role', 'is_active', 'is_staff', 'department', 'division',
-        'support_division', 'work_station',
+        'role', 'is_active', 'is_staff', 'department', 'division', 'work_station',
     )
     search_fields = ('username', 'full_name', 'check_number', 'official_email')
     fieldsets = DjangoUserAdmin.fieldsets + (
         ('NAOT Employee Details', {
             'fields': (
                 'role', 'full_name', 'check_number', 'personnel_file_number',
-                'designation', 'work_station', 'department', 'division', 'support_division',
-                'section', 'unit', 'official_email', 'date_of_first_appointment',
+                'designation', 'work_station', 'department', 'division',
+                'section', 'official_email', 'date_of_first_appointment',
                 'phone_number', 'manager', 'deleted_at',
             )
         }),

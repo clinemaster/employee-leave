@@ -169,7 +169,7 @@ class MfaLoginVerifyView(APIView):
 
         refresh = RefreshToken.for_user(user)
         full_user = User.objects.select_related(
-            'department', 'division', 'support_division', 'work_station', 'section', 'unit', 'designation',
+            'department', 'division', 'work_station', 'section', 'designation',
         ).prefetch_related('additional_roles').get(pk=user.pk)
         return Response({
             'access': str(refresh.access_token),

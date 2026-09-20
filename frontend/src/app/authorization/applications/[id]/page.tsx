@@ -2,7 +2,9 @@
 
 import { use } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
-import { SectionA, SectionB1ReadOnly, SectionB2ReadOnly } from "@/components/leave/SectionReadOnly";
+import {
+  SectionA, SectionAAGReadOnly, SectionB1ReadOnly, SectionB2ReadOnly, SectionCAGReadOnly,
+} from "@/components/leave/SectionReadOnly";
 import { DownloadPdfButton } from "@/components/leave/DownloadPdfButton";
 import { ApprovalForm } from "@/components/workflow/ApprovalForm";
 import { TravelPaymentPreview } from "@/components/leave/TravelPaymentPreview";
@@ -31,7 +33,13 @@ export default function AuthorizationApplicationDetailPage({ params }: { params:
       ) : (
         <div className="space-y-4">
           <SectionA application={application} />
-          <SectionB1ReadOnly application={application} />
+          {application.requires_cag_review ? (
+            <SectionCAGReadOnly application={application} />
+          ) : application.requires_aag_review ? (
+            <SectionAAGReadOnly application={application} />
+          ) : (
+            <SectionB1ReadOnly application={application} />
+          )}
           <SectionB2ReadOnly application={application} />
           {hasTravelPaymentData ? (
             <Card>

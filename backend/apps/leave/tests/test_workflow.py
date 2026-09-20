@@ -48,7 +48,7 @@ def test_submit_rejected_with_clear_error_when_employee_has_no_reviewer(as_user,
     """
     orphan = make_user(username='orphan', full_name='No Manager', check_number='ORPH-001')
     assert orphan.manager is None
-    assert orphan.department is None and orphan.division is None and orphan.support_division is None
+    assert orphan.department is None and orphan.division is None
     app = LeaveApplication.objects.create(
         employee=orphan, leave_type=leave_type, full_name=orphan.full_name,
         start_date=datetime.date(2026, 1, 5), last_date=datetime.date(2026, 1, 9),

@@ -8,9 +8,16 @@ re-verified independently of anything the client sends.
 Role -> access matrix (spec):
   EMPLOYEE              create/edit own DRAFT applications, edit Section A only, submit.
   HOD (*)               read-only Section A, edit Section B1 only, only on applications
-                         routed to them: matched by department/division/support_division
-                         (see matched_head_for), else legacy manager-based routing, else
-                         (vacant post) a fallback HR Admin/Authorizing Officer.
+                         routed to them: matched by department (see matched_head_for),
+                         else legacy manager-based routing, else (vacant post) a
+                         fallback HR Admin/Authorizing Officer. Department employees
+                         only — Division employees go through AAG instead (see below).
+  CAG                    stands in for Section B1 for applicants whose role requires it
+                         (see needs_cag_review) — org-wide, not matched per org unit.
+  AAG                    stands in for Section B1 for Division employees whose role
+                         doesn't itself require CAG review (see needs_aag_review),
+                         matched to the employee's specific division (matched_aag_for)
+                         — CAG takes priority over AAG when both would apply.
   HR_ADMIN               read-only A+B1, edit Section B2 only.
   AUTHORIZING_OFFICER    read-only A+B1+B2, edit Section C only.
   SYSTEM_ADMIN            manage leave types, org units, users (not the
@@ -22,16 +29,14 @@ from rest_framework.exceptions import PermissionDenied
 from apps.accounts.models import CAG_APPLICANT_ROLES, Role
 
 HOD_ROLES = {
-    Role.HEAD_OF_DEPARTMENT, Role.HEAD_OF_DIVISION, Role.HEAD_OF_SUPPORT_DIVISION,
-    Role.HEAD_OF_SECTION, Role.HEAD_OF_UNIT,
+    Role.HEAD_OF_DEPARTMENT, Role.DAG, Role.HEAD_OF_SECTION,
 }
 
 # For each org-unit field an employee may belong to, the role that reviews
 # their leave applications and the matching FK on the reviewing user.
 _ORG_UNIT_HEAD_ROLES = (
     ('department_id', Role.HEAD_OF_DEPARTMENT, 'department_id'),
-    ('division_id', Role.HEAD_OF_DIVISION, 'division_id'),
-    ('support_division_id', Role.HEAD_OF_SUPPORT_DIVISION, 'support_division_id'),
+    ('division_id', Role.DAG, 'division_id'),
 )
 
 # Fields that belong to each section of the paper form. Used to reject
@@ -45,6 +50,7 @@ SECTION_A_FIELDS = {
 }
 SECTION_B1_FIELDS = {'recommendation'}  # LeaveRecommendation nested writable fields
 SECTION_CAG_FIELDS = {'cag_review'}  # LeaveCAGReview nested writable fields
+SECTION_AAG_FIELDS = {'aag_review'}  # LeaveAAGReview nested writable fields
 SECTION_B2_FIELDS = {'hr_review'}  # LeaveHRReview nested writable fields
 SECTION_C_FIELDS = {'approval'}  # LeaveApproval nested writable fields
 
@@ -73,23 +79,57 @@ def is_cag_reviewer(user):
     return user.is_authenticated and user.has_role(Role.CAG)
 
 
+def is_aag_reviewer(user):
+    return user.is_authenticated and user.has_role(Role.AAG)
+
+
 def needs_cag_review(employee):
     """
     True if this applicant's role requires the mandatory CAG review stage
     instead of the normal HOD stage (spec: AUTHORIZING_OFFICER,
-    HEAD_OF_DEPARTMENT, HEAD_OF_SUPPORT_DIVISION, HEAD_OF_DIVISION). Checked
-    against the employee's full role set (base + additional_roles), same as
-    every other role gate in this module.
+    HEAD_OF_DEPARTMENT, DAG, AAG, CHIEF_ACCOUNTANT, DAHRM, ADA,
+    CHIEF_EXTERNAL_AUDITOR). Checked against the employee's full role set
+    (base + additional_roles), same as every other role gate in this module.
     """
     return any(employee.has_role(r) for r in CAG_APPLICANT_ROLES)
 
 
+def needs_aag_review(employee):
+    """
+    True if this applicant belongs to a Division and doesn't already need
+    CAG review (needs_cag_review takes priority — an employee whose role is
+    itself a CAG_APPLICANT_ROLE always follows the CAG track, even if they
+    also belong to a division). Department employees are unaffected and
+    keep the normal HOD stage (matched_head_for).
+    """
+    return employee.division_id is not None and not needs_cag_review(employee)
+
+
+def matched_aag_for(employee):
+    """
+    The AAG assigned to the employee's specific division, found by role +
+    the reviewing user's own `division` FK (mirrors matched_head_for's
+    division branch, but for AAG instead of DAG). Returns None if that
+    division currently has no one holding the AAG role (vacant post).
+    """
+    from django.db.models import Q
+
+    from apps.accounts.models import User
+
+    if employee.division_id is None:
+        return None
+    return User.objects.filter(
+        Q(role=Role.AAG) | Q(additional_roles__role=Role.AAG),
+        is_active=True, division_id=employee.division_id,
+    ).distinct().order_by('id').first()
+
+
 def matched_head_for(employee):
     """
-    The Head of Department/Division/Support Division whose org unit matches
-    the employee's, found by role rather than by manual assignment (an
-    employee belongs to exactly one of department/division/support_division —
-    see accounts.serializers._validate_single_org_unit). Returns None if that
+    The Head of Department/Division whose org unit matches the employee's,
+    found by role rather than by manual assignment (an employee belongs to
+    exactly one of department/division — see
+    accounts.serializers._validate_single_org_unit). Returns None if that
     org unit currently has no one holding the matching head role (vacant post).
     """
     from django.db.models import Q
@@ -110,9 +150,9 @@ def matched_head_for(employee):
 def routed_hod_for(application):
     """
     The reviewer for Section B1 of this application: the head of the
-    employee's department/division/support_division (matched_head_for), or —
-    for legacy Section/Unit-level routing not covered by that match — the
-    employee's manually-assigned `manager`.
+    employee's department/division (matched_head_for), or — for legacy
+    Section-level routing not covered by that match — the employee's
+    manually-assigned `manager`.
     """
     employee = application.employee
     head = matched_head_for(employee)
@@ -124,9 +164,9 @@ def routed_hod_for(application):
 def fallback_reviewer_for(application):
     """
     Organization-wide fallback reviewer used only when the employee's
-    department/division/support_division has no one in the matching head
-    role and no manager is set either (vacant post) — routes to HR Admin,
-    then Authorizing Officer, rather than leaving the application stuck.
+    department/division has no one in the matching head role and no manager
+    is set either (vacant post) — routes to HR Admin, then Authorizing
+    Officer, rather than leaving the application stuck.
     """
     from django.db.models import Q
 
@@ -162,6 +202,10 @@ def can_view_application(user, application):
         return True
     if is_cag_reviewer(user) and needs_cag_review(application.employee):
         return True
+    if is_aag_reviewer(user) and needs_aag_review(application.employee):
+        matched = matched_aag_for(application.employee)
+        if matched is not None and matched.id == user.id:
+            return True
     if is_hr_admin(user) or is_authorizing_officer(user):
         return True
     return False
@@ -170,17 +214,16 @@ def can_view_application(user, application):
 def hod_scope_q(user):
     """
     Q object matching applications from employees this head reviews: those
-    whose department/division/support_division matches the head's own (role-
-    derived routing), plus legacy manager-based routing (Section/Unit heads,
-    or any head manually assigned as someone's manager).
+    whose department/division matches the head's own (role-derived routing),
+    plus legacy manager-based routing (Section heads, or any head manually
+    assigned as someone's manager).
     """
     from django.db.models import Q
 
     q = Q(employee__manager=user)
     role_to_field = {
         Role.HEAD_OF_DEPARTMENT: 'department',
-        Role.HEAD_OF_DIVISION: 'division',
-        Role.HEAD_OF_SUPPORT_DIVISION: 'support_division',
+        Role.DAG: 'division',
     }
     for role, field in role_to_field.items():
         if not user.has_role(role):
@@ -189,6 +232,24 @@ def hod_scope_q(user):
         if org_unit_id is not None:
             q |= Q(**{f'employee__{field}_id': org_unit_id})
     return q
+
+
+def aag_scope_q(user):
+    """
+    Q object matching applications from employees in this AAG's own division
+    who actually need AAG review (excludes employees whose role is itself a
+    CAG_APPLICANT_ROLE — CAG track takes priority, see needs_aag_review).
+    """
+    from django.db.models import Q
+
+    if user.division_id is None:
+        return Q(pk__in=[])
+
+    not_cag_track = ~(
+        Q(employee__role__in=CAG_APPLICANT_ROLES)
+        | Q(employee__additional_roles__role__in=CAG_APPLICANT_ROLES)
+    )
+    return Q(employee__division_id=user.division_id) & not_cag_track
 
 
 def visible_queryset_for(user, queryset):
@@ -202,6 +263,8 @@ def visible_queryset_for(user, queryset):
             employee__additional_roles__role__in=CAG_APPLICANT_ROLES
         )
         return queryset.filter(Q(employee=user) | cag_applicants).distinct()
+    if is_aag_reviewer(user):
+        return queryset.filter(Q(employee=user) | aag_scope_q(user)).distinct()
     if is_hod(user):
         return queryset.filter(Q(employee=user) | hod_scope_q(user))
     return queryset.filter(employee=user)
@@ -229,9 +292,9 @@ def assert_can_edit_fields(user, application, incoming_fields):
     if incoming_fields and incoming_fields <= SECTION_B1_FIELDS:
         # Section B1 (recommendation) belongs to whoever is actually routed
         # to review this application -- the matched Head of Department/
-        # Division/Support Division/Section/Unit, or (vacant post) the
-        # fallback HR Admin/Authorizing Officer -- not gated by role alone,
-        # since the fallback reviewer may not hold a HOD_ROLES role.
+        # Division/Section, or (vacant post) the fallback HR Admin/
+        # Authorizing Officer -- not gated by role alone, since the fallback
+        # reviewer may not hold a HOD_ROLES role.
         reviewer = effective_reviewer_for(application)
         if reviewer is None or reviewer.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
@@ -242,6 +305,16 @@ def assert_can_edit_fields(user, application, incoming_fields):
             raise PermissionDenied('Only a CAG reviewer may act here.')
         if not needs_cag_review(application.employee):
             raise PermissionDenied('This application is not routed to CAG.')
+        return
+
+    if incoming_fields and incoming_fields <= SECTION_AAG_FIELDS:
+        if not is_aag_reviewer(user):
+            raise PermissionDenied('Only an AAG reviewer may act here.')
+        if not needs_aag_review(application.employee):
+            raise PermissionDenied('This application is not routed to AAG.')
+        matched = matched_aag_for(application.employee)
+        if matched is None or matched.id != user.id:
+            raise PermissionDenied('This application is not routed to you.')
         return
 
     if is_hr_admin(user):

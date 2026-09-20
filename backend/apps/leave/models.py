@@ -29,6 +29,8 @@ class ApplicationStatus(models.TextChoices):
     HOD_RECOMMENDED = 'HOD_RECOMMENDED', 'HOD Recommended'
     PENDING_CAG_REVIEW = 'PENDING_CAG_REVIEW', 'Pending CAG Review'
     CAG_RECOMMENDED = 'CAG_RECOMMENDED', 'CAG Recommended'
+    PENDING_AAG_REVIEW = 'PENDING_AAG_REVIEW', 'Pending AAG Review'
+    AAG_RECOMMENDED = 'AAG_RECOMMENDED', 'AAG Recommended'
     RETURNED_TO_EMPLOYEE = 'RETURNED_TO_EMPLOYEE', 'Returned to Employee'
     PENDING_HR_REVIEW = 'PENDING_HR_REVIEW', 'Pending HR Review'
     HR_VERIFIED = 'HR_VERIFIED', 'HR Verified'
@@ -55,6 +57,8 @@ LOCATION_BY_STATUS = {
     ApplicationStatus.HOD_RECOMMENDED: 'HR',
     ApplicationStatus.PENDING_CAG_REVIEW: 'CAG',
     ApplicationStatus.CAG_RECOMMENDED: 'HR',
+    ApplicationStatus.PENDING_AAG_REVIEW: 'AAG',
+    ApplicationStatus.AAG_RECOMMENDED: 'HR',
     ApplicationStatus.RETURNED_TO_EMPLOYEE: 'Employee — Action Required',
     ApplicationStatus.PENDING_HR_REVIEW: 'HR',
     ApplicationStatus.HR_VERIFIED: 'Authorizing Officer',
@@ -74,6 +78,8 @@ STATUS_LABEL_BY_STATUS = {
     ApplicationStatus.HOD_RECOMMENDED: 'Under Review',
     ApplicationStatus.PENDING_CAG_REVIEW: 'Under Review',
     ApplicationStatus.CAG_RECOMMENDED: 'Under Review',
+    ApplicationStatus.PENDING_AAG_REVIEW: 'Under Review',
+    ApplicationStatus.AAG_RECOMMENDED: 'Under Review',
     ApplicationStatus.RETURNED_TO_EMPLOYEE: 'Returned',
     ApplicationStatus.PENDING_HR_REVIEW: 'Under Review',
     ApplicationStatus.HR_VERIFIED: 'Under Review',
@@ -88,7 +94,7 @@ STATUS_LABEL_BY_STATUS = {
 
 
 class LeaveRecommendation(models.Model):
-    """Section B1 of the leave form: Head of Department/Section/Unit recommendation."""
+    """Section B1 of the leave form: Head of Department/Section recommendation."""
     reviewer = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='leave_recommendations',
@@ -130,6 +136,32 @@ class LeaveCAGReview(models.Model):
 
     def __str__(self):
         return f'CAG Review #{self.pk}'
+
+
+class LeaveAAGReview(models.Model):
+    """
+    AAG review stage: mandatory for employees who belong to a Division and
+    whose role does not itself require CAG review (see
+    apps.leave.permissions.needs_aag_review) -- standing in for Section B1
+    (line-manager recommendation) for those employees, matched to the AAG
+    assigned to their specific division. See apps.leave.workflow for routing.
+    """
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='leave_aag_reviews',
+    )
+    recommended = models.BooleanField(null=True, blank=True)
+    comments = models.TextField(blank=True)
+
+    signature_name = models.CharField(max_length=255, blank=True)
+    signature_designation = models.CharField(max_length=255, blank=True)
+    signature_date = models.DateField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'AAG Review #{self.pk}'
 
 
 class LeaveHRReview(models.Model):
@@ -227,6 +259,10 @@ class LeaveApplication(models.Model):
         LeaveCAGReview, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='application',
     )
+    aag_review = models.OneToOneField(
+        LeaveAAGReview, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='application',
+    )
     hr_review = models.OneToOneField(
         LeaveHRReview, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='application',
@@ -274,6 +310,17 @@ class LeaveApplication(models.Model):
         """
         from .permissions import needs_cag_review
         return needs_cag_review(self.employee)
+
+    @property
+    def requires_aag_review(self):
+        """
+        True if this applicant belongs to a Division and doesn't already
+        require CAG review (see apps.leave.permissions.needs_aag_review) --
+        CAG takes priority, so a Division employee whose role also requires
+        CAG review still follows the CAG track, never both.
+        """
+        from .permissions import needs_aag_review
+        return needs_aag_review(self.employee)
 
     def save(self, *args, **kwargs):
         if not self.application_number:

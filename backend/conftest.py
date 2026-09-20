@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import Role, User
 from apps.leave.models import LeaveType
-from apps.organization.models import Department
+from apps.organization.models import Department, Division
 
 
 @pytest.fixture(autouse=True)
@@ -51,6 +51,11 @@ def department(db):
 
 
 @pytest.fixture
+def division(db):
+    return Division.objects.create(name='Test Division', code='TESTDIV')
+
+
+@pytest.fixture
 def hod_user(make_user):
     return make_user(username='hod1', full_name='Head Of Dept', check_number='HOD-001', role=Role.HEAD_OF_DEPARTMENT)
 
@@ -83,6 +88,31 @@ def cag_user(make_user):
 @pytest.fixture
 def other_cag_user(make_user):
     return make_user(username='cag2', full_name='Other CAG Reviewer', check_number='CAG-002', role=Role.CAG)
+
+
+@pytest.fixture
+def aag_user(make_user, division):
+    """An AAG matched to `division` -- reviews that division's employees."""
+    return make_user(username='aag1', full_name='AAG Reviewer', check_number='AAG-001', role=Role.AAG, division=division)
+
+
+@pytest.fixture
+def other_aag_user(make_user):
+    """An AAG matched to a different division -- used for IDOR checks."""
+    other_division = Division.objects.create(name='Other Division', code='OTHERDIV')
+    return make_user(
+        username='aag2', full_name='Other AAG Reviewer', check_number='AAG-002', role=Role.AAG,
+        division=other_division,
+    )
+
+
+@pytest.fixture
+def division_employee_user(make_user, division):
+    """A plain employee belonging to `division` -- must route through AAG, not the normal HOD stage."""
+    return make_user(
+        username='divemp1', full_name='Division Employee', check_number='DIVEMP-001', role=Role.EMPLOYEE,
+        division=division,
+    )
 
 
 @pytest.fixture
@@ -142,6 +172,20 @@ def hod_applicant_draft_application(db, hod_applicant_user, leave_type):
         employee=hod_applicant_user,
         leave_type=leave_type,
         full_name=hod_applicant_user.full_name,
+        start_date=datetime.date(2026, 1, 5),  # Monday
+        last_date=datetime.date(2026, 1, 9),   # Friday, no holidays -> 5 working days
+    )
+    return app
+
+
+@pytest.fixture
+def division_employee_draft_application(db, division_employee_user, leave_type):
+    """A DRAFT application from an employee who belongs to a Division -- must route through AAG."""
+    from apps.leave.models import LeaveApplication
+    app = LeaveApplication.objects.create(
+        employee=division_employee_user,
+        leave_type=leave_type,
+        full_name=division_employee_user.full_name,
         start_date=datetime.date(2026, 1, 5),  # Monday
         last_date=datetime.date(2026, 1, 9),   # Friday, no holidays -> 5 working days
     )

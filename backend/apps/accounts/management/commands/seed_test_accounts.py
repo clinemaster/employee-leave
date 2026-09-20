@@ -13,7 +13,7 @@ from django.db import transaction
 
 from apps.accounts.models import Role, User
 from apps.leave.models import LeaveType
-from apps.organization.models import Department, Designation, Section, Unit, WorkStation
+from apps.organization.models import Department, Designation, Section, WorkStation
 
 TEST_PASSWORD = 'TestPass123!'
 
@@ -22,7 +22,6 @@ ACCOUNTS = [
     ('sysadmin', 'SA-001', Role.SYSTEM_ADMIN, {'is_staff': True, 'is_superuser': True}),
     ('hod', 'HOD-001', Role.HEAD_OF_DEPARTMENT, {}),
     ('hos', 'HOS-001', Role.HEAD_OF_SECTION, {}),
-    ('hou', 'HOU-001', Role.HEAD_OF_UNIT, {}),
     ('hr', 'HR-001', Role.HR_ADMIN, {}),
     ('ao', 'AO-001', Role.AUTHORIZING_OFFICER, {}),
     ('employee', 'EMP-001', Role.EMPLOYEE, {}),
@@ -47,9 +46,6 @@ class Command(BaseCommand):
             section, _ = Section.objects.get_or_create(
                 department=department, code='SYS', defaults={'name': 'Systems'}
             )
-            unit, _ = Unit.objects.get_or_create(
-                section=section, code='SUP', defaults={'name': 'Support'}
-            )
 
             for name, code in [
                 ('Annual Leave', 'ANNUAL'),
@@ -73,7 +69,6 @@ class Command(BaseCommand):
                         'official_email': f'{username}@example.test',
                         'department': department,
                         'section': section,
-                        'unit': unit,
                         'work_station': work_station,
                         'designation': designation,
                         'date_of_first_appointment': date(2020, 1, 1),
@@ -92,15 +87,12 @@ class Command(BaseCommand):
                 summary.append((username, role, was_created))
 
             # Wire up manager chain so leave applications route correctly:
-            # employee -> hod, employee2 -> hod, hou -> hos -> hod.
+            # employee -> hod, employee2 -> hod, hos -> hod.
             hod = created_users['hod']
             hos = created_users['hos']
             for username in ('employee', 'employee2'):
                 created_users[username].manager = hod
                 created_users[username].save(update_fields=['manager'])
-            hou = created_users['hou']
-            hou.manager = hos
-            hou.save(update_fields=['manager'])
             hos.manager = hod
             hos.save(update_fields=['manager'])
 

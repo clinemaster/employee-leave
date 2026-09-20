@@ -8,6 +8,8 @@ const statusStyles: Record<LeaveStatus, string> = {
   HOD_RECOMMENDED: "bg-indigo-100 text-indigo-700",
   PENDING_CAG_REVIEW: "bg-purple-100 text-purple-700",
   CAG_RECOMMENDED: "bg-indigo-100 text-indigo-700",
+  PENDING_AAG_REVIEW: "bg-purple-100 text-purple-700",
+  AAG_RECOMMENDED: "bg-indigo-100 text-indigo-700",
   RETURNED_TO_EMPLOYEE: "bg-amber-100 text-amber-700",
   PENDING_HR_REVIEW: "bg-indigo-100 text-indigo-700",
   HR_VERIFIED: "bg-teal-100 text-teal-700",
@@ -42,6 +44,7 @@ function locationStyle(location: string): string {
   if (location === "Completed") return "bg-gray-100 text-gray-600";
   if (location.startsWith("HOD")) return "bg-blue-100 text-blue-700";
   if (location.startsWith("CAG")) return "bg-purple-100 text-purple-700";
+  if (location.startsWith("AAG")) return "bg-purple-100 text-purple-700";
   if (location.startsWith("HR")) return "bg-indigo-100 text-indigo-700";
   if (location.startsWith("Authorizing Officer")) return "bg-teal-100 text-teal-700";
   return "bg-gray-100 text-gray-700";

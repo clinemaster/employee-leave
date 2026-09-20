@@ -2,7 +2,10 @@
 
 import { use } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
-import { SectionA, SectionB1ReadOnly, SectionB2ReadOnly, SectionCReadOnly } from "@/components/leave/SectionReadOnly";
+import {
+  SectionA, SectionAAGReadOnly, SectionB1ReadOnly, SectionB2ReadOnly, SectionCAGReadOnly,
+  SectionCReadOnly,
+} from "@/components/leave/SectionReadOnly";
 import { DownloadPdfButton } from "@/components/leave/DownloadPdfButton";
 import { WorkflowHistoryCard, WorkflowStatusCard } from "@/components/leave/WorkflowStatus";
 import { useGetLeaveApplicationQuery } from "@/features/leave/leaveApi";
@@ -24,7 +27,13 @@ export default function EmployeeApplicationDetailPage({ params }: { params: Prom
         <div className="space-y-4">
           <WorkflowStatusCard application={application} />
           <SectionA application={application} />
-          <SectionB1ReadOnly application={application} />
+          {application.requires_cag_review ? (
+            <SectionCAGReadOnly application={application} />
+          ) : application.requires_aag_review ? (
+            <SectionAAGReadOnly application={application} />
+          ) : (
+            <SectionB1ReadOnly application={application} />
+          )}
           <SectionB2ReadOnly application={application} />
           <SectionCReadOnly application={application} />
           <WorkflowHistoryCard applicationId={applicationId} />

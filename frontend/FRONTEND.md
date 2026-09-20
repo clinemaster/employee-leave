@@ -308,10 +308,11 @@ frontend/src/
 
 ## Roles (confirmed, from /API.md)
 
-`EMPLOYEE, HEAD_OF_DEPARTMENT, HEAD_OF_SECTION, HEAD_OF_UNIT, HR_ADMIN, AUTHORIZING_OFFICER,
-SYSTEM_ADMIN`. The three "line manager" roles are grouped as `HOD_ROLES` in `types/index.ts` and
-all land on `/hod/applications`; every role can also reach `/employee/applications` since line
-managers, HR, etc. can themselves be leave applicants.
+`EMPLOYEE, HEAD_OF_DEPARTMENT, DAG, HEAD_OF_SECTION, HR_ADMIN, AUTHORIZING_OFFICER, CAG, AAG,
+CHIEF_ACCOUNTANT, DAHRM, ADA, CHIEF_EXTERNAL_AUDITOR, SYSTEM_ADMIN`. The "line manager" roles are
+grouped as `HOD_ROLES` in `types/index.ts` and all land on `/hod/applications`; every role can
+also reach `/employee/applications` since line managers, HR, etc. can themselves be leave
+applicants.
 
 ## RTK Query
 
@@ -379,7 +380,7 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
   paginated applications table + leave balances (`LeaveBalances`);
   `/employee/applications/[id]` — full read-only A/B1/B2/C view + "Download PDF", enabled only once
   status is `APPROVED`/`PDF_GENERATED` (matches the backend's allowed-status gate).
-- **HOD** (`HEAD_OF_DEPARTMENT`/`HEAD_OF_SECTION`/`HEAD_OF_UNIT`): `/hod/applications` — tabs
+- **HOD** (`HEAD_OF_DEPARTMENT`/`DAG`/`HEAD_OF_SECTION`): `/hod/applications` — tabs
   (Pending Recommendation=`PENDING_HOD_REVIEW` / Recommended=`HOD_RECOMMENDED` /
   Returned=`RETURNED_TO_EMPLOYEE` / Completed=`APPROVED`); `/hod/applications/[id]` — Section A
   read-only + `HodRecommendationForm` (recommend/do-not-recommend, comments required unless
@@ -391,6 +392,14 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
   documents `.../return/` as HOD/HOS/HOU-only (from `PENDING_HOD_REVIEW`); an HR "return to line
   manager" transition (`RETURNED_TO_HOD`) exists in the status enum but has no REST action wired up
   yet per API.md's own "Deferred" section, so the frontend doesn't offer it either.
+- **CAG**: `/cag/applications` — tabs (Pending Review=`PENDING_CAG_REVIEW` / Recommended=
+  `CAG_RECOMMENDED` / Rejected=`DENIED`); `/cag/applications/[id]` — Section A read-only +
+  `CagReviewForm` (recommend/reject, comments, signature) — mandatory stand-in for Section B1 for
+  applicants whose role requires it (`requires_cag_review`), skipping the HOD stage entirely.
+- **AAG**: `/aag/applications` — same tab/page shape as CAG (`PENDING_AAG_REVIEW`/
+  `AAG_RECOMMENDED`/`DENIED`), `AagReviewForm` — mandatory stand-in for Section B1 for Division
+  employees whose role doesn't itself require CAG review (`requires_aag_review`), matched to the
+  AAG assigned to that specific division (CAG takes priority when both would apply).
 - **Authorizing Officer**: `/authorization/applications` — tabs (Pending Decision=
   `PENDING_AUTHORIZATION` / Approved / Denied); `/authorization/applications/[id]` — A+B1+B2
   read-only + `ApprovalForm` (Approve with optional comments, or Deny with a required reason,
@@ -399,7 +408,7 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
   document one.
 - **Admin** (`SYSTEM_ADMIN`): `/admin/leave-types` (add / edit-name / deactivate / up-down reorder),
   `/admin/holidays` (add with a recurring-holiday checkbox / delete), `/admin/users` (list +
-  create + inline role/active edit), `/admin/organization` (departments/sections/units/stations —
+  create + inline role/active edit), `/admin/organization` (departments/divisions/designations/work stations —
   list + create + active toggle), `/admin/reports` (filtered CSV/XLSX export download),
   `/admin/leave-policies` (list + create/edit + delete tenure-banded entitlement rules — added
   phase 3, see "Phase 3 additions" below).

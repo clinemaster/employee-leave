@@ -55,19 +55,18 @@ Returns the current authenticated user's profile (`UserSerializer`).
 official_email, role, additional_roles, check_number,
 personnel_file_number, designation, designation_name, work_station,
 work_station_name, department, department_name, division, division_name,
-support_division, support_division_name, section, section_name, unit,
-unit_name, manager, phone_number, date_of_first_appointment, is_active,
-mfa_enabled`. `UserWriteSerializer` (create/update) accepts the same FK id
-fields plus `password` and `additional_roles`, but not the `*_name`
-companions (read-only, derived from the FK).
+section, section_name, manager, phone_number, date_of_first_appointment,
+is_active, mfa_enabled`. `UserWriteSerializer` (create/update) accepts the
+same FK id fields plus `password` and `additional_roles`, but not the
+`*_name` companions (read-only, derived from the FK).
 
 `designation` and `work_station` are FKs to `organization.Designation` /
 `organization.WorkStation` (both simple `{id, name, code, is_active}`
 lookups, `WorkStation` additionally has `address`) — not free text.
 
-`role` choices: `EMPLOYEE, HEAD_OF_DEPARTMENT, HEAD_OF_DIVISION,
-HEAD_OF_SUPPORT_DIVISION, HEAD_OF_SECTION, HEAD_OF_UNIT, HR_ADMIN,
-AUTHORIZING_OFFICER, SYSTEM_ADMIN`.
+`role` choices: `EMPLOYEE, HEAD_OF_DEPARTMENT, DAG, HEAD_OF_SECTION,
+HR_ADMIN, AUTHORIZING_OFFICER, CAG, AAG, CHIEF_ACCOUNTANT, DAHRM, ADA,
+CHIEF_EXTERNAL_AUDITOR, SYSTEM_ADMIN`.
 
 Every user is `EMPLOYEE` by default and may additionally hold one or more
 roles beyond their base `role` — e.g. an `EMPLOYEE` also designated
@@ -79,35 +78,33 @@ Every role-gated permission check in the API (`is_hod`, `is_hr_admin`,
 `is_authorizing_officer`, `is_system_admin`, `IsSystemAdmin`, etc.) treats
 `role` and `additional_roles` as one combined set.
 
-**Org-unit assignment**: every user belongs to exactly one of `department`,
-`division`, or `support_division` (validated server-side on write) — except
-`SYSTEM_ADMIN`, `HR_ADMIN`, and `AUTHORIZING_OFFICER`, which are
-organization-wide roles exempt from that rule. A `400`
-`{"non_field_errors": ["A user must belong to exactly one of department,
-division or support division."]}` is returned otherwise.
+**Org-unit assignment**: every user belongs to exactly one of `department`
+or `division` (validated server-side on write) — except `SYSTEM_ADMIN`,
+`HR_ADMIN`, `AUTHORIZING_OFFICER`, `CAG`, `AAG`, `CHIEF_ACCOUNTANT`,
+`DAHRM`, `ADA`, and `CHIEF_EXTERNAL_AUDITOR`, which are organization-wide
+roles exempt from that rule. A `400`
+`{"non_field_errors": ["A user must belong to exactly one of department or
+division."]}` is returned otherwise.
 
 `manager` is a legacy routing FK still honored as a fallback for
-Section/Unit-level HOD routing (see "Section B1 routing" under Leave
-Applications below) — new Department/Division/Support-Division routing no
-longer requires it.
+Section-level HOD routing (see "Section B1 routing" under Leave
+Applications below) — new Department/Division routing no longer requires it.
 
 ## Organization (read: any authenticated user; write: SYSTEM_ADMIN)
 
-Department, Division, and Support Division are parallel top-level org units
-— an employee/head belongs to exactly one of them (see "Org-unit assignment"
-above). All support soft-delete (`DELETE` sets `deleted_at`/`is_active` off
-rather than removing the row, so existing employee references aren't
-orphaned) and inline edit via `PATCH`.
+Department and Division are parallel top-level org units — an employee/head
+belongs to exactly one of them (see "Org-unit assignment" above). All
+support soft-delete (`DELETE` sets `deleted_at`/`is_active` off rather than
+removing the row, so existing employee references aren't orphaned) and
+inline edit via `PATCH`.
 
 - `GET|POST /api/departments/`, `.../{id}/` — `{id, name, code, is_active}`
 - `GET|POST /api/divisions/`, `.../{id}/` — `{id, name, code, is_active}`
-- `GET|POST /api/support-divisions/`, `.../{id}/` — `{id, name, code, is_active}`
 - `GET|POST /api/designations/`, `.../{id}/` — `{id, name, code, is_active}`
   — a job title/grade a user may hold (e.g. "Auditor General"); matched by
   `LeavePolicy.designation` (free text, case-insensitive) against this
   record's `name` — see "Leave Policies" below.
 - `GET|POST /api/sections/`, `.../{id}/` — `{id, name, code, department, is_active}`
-- `GET|POST /api/units/`, `.../{id}/` — `{id, name, code, section, is_active}`
 - `GET|POST /api/work-stations/`, `.../{id}/` — `{id, name, code, address, is_active}`
   (renamed from `/api/stations/` — every user belongs to one via `work_station`)
 
@@ -325,12 +322,11 @@ The reviewer for Section B1 (`recommend`/`return`/`resubmit-to-hr`) is
 resolved in this order (`apps.leave.permissions`):
 
 1. **Matched head** (`matched_head_for`) — the active user holding
-   `HEAD_OF_DEPARTMENT`/`HEAD_OF_DIVISION`/`HEAD_OF_SUPPORT_DIVISION` whose
-   org unit matches the employee's own `department`/`division`/
-   `support_division` (role membership includes `additional_roles`, not
-   just the base `role`).
+   `HEAD_OF_DEPARTMENT`/`DAG` whose org unit matches the employee's own
+   `department`/`division` (role membership includes `additional_roles`,
+   not just the base `role`).
 2. **Legacy `manager`** — if no matched head exists, the employee's
-   manually-assigned `manager` FK (still used for Section/Unit-level HOD
+   manually-assigned `manager` FK (still used for Section-level HOD
    routing, which isn't derived automatically).
 3. **Fallback** (`fallback_reviewer_for`) — if neither of the above exists
    (a vacant post with no manager set either), routes to an active
@@ -377,9 +373,13 @@ Sending a field outside your authorized section returns
 
 | Endpoint | Allowed from status | Allowed role | Effect |
 |---|---|---|---|
-| `.../submit/` | DRAFT, RETURNED_TO_EMPLOYEE | applicant | -> PENDING_HOD_REVIEW |
+| `.../submit/` | DRAFT, RETURNED_TO_EMPLOYEE | applicant | -> PENDING_HOD_REVIEW (or PENDING_CAG_REVIEW / PENDING_AAG_REVIEW — see below) |
 | `.../recommend/` | PENDING_HOD_REVIEW | routed reviewer (see "Section B1 routing") | writes Section B1 (`recommendation`), -> HOD_RECOMMENDED -> (auto) PENDING_HR_REVIEW |
 | `.../return/` | PENDING_HOD_REVIEW | routed reviewer (see "Section B1 routing") | -> RETURNED_TO_EMPLOYEE |
+| `.../cag-review/` | PENDING_CAG_REVIEW | CAG | writes `cag_review` (stands in for Section B1), -> CAG_RECOMMENDED -> (auto) PENDING_HR_REVIEW |
+| `.../cag-reject/` | PENDING_CAG_REVIEW | CAG | `comments` (reason) required, -> DENIED (terminal) |
+| `.../aag-review/` | PENDING_AAG_REVIEW | the AAG matched to the employee's division | writes `aag_review` (stands in for Section B1), -> AAG_RECOMMENDED -> (auto) PENDING_HR_REVIEW |
+| `.../aag-reject/` | PENDING_AAG_REVIEW | the AAG matched to the employee's division | `comments` (reason) required, -> DENIED (terminal) |
 | `.../verify/` | PENDING_HR_REVIEW | HR_ADMIN | writes Section B2 (`hr_review`), -> HR_VERIFIED -> (auto) PENDING_AUTHORIZATION |
 | `.../approve/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=true), -> APPROVED |
 | `.../deny/` | PENDING_AUTHORIZATION | AUTHORIZING_OFFICER | writes Section C (`approval`, approved=false), -> DENIED |
@@ -452,11 +452,11 @@ Shape depends on the caller's role:
   applications only. `pending` bundles every in-flight status
   (`PENDING_HOD_REVIEW` … `PENDING_AUTHORIZATION`); `approved` bundles
   `APPROVED`/`PDF_GENERATED`/`COMPLETED`.
-- **HOD/HOS/HOU** (any role in `HOD_ROLES`, base or additional): `{pending_recommendation,
+- **HOD/HOS** (any role in `HOD_ROLES`, base or additional): `{pending_recommendation,
   recommended, returned, completed}` — applications from employees this head
-  reviews: those whose department/division/support_division matches the
-  head's own (role-derived, see "Section B1 routing"), plus legacy
-  manager-routed employees (`apps.leave.permissions.hod_scope_q`).
+  reviews: those whose department/division matches the head's own
+  (role-derived, see "Section B1 routing"), plus legacy manager-routed
+  employees (`apps.leave.permissions.hod_scope_q`).
 - **HR_ADMIN**: `{pending_verification, verified, returned, approved,
   denied}` — org-wide.
 - **AUTHORIZING_OFFICER**: `{pending_authorization, approved, denied,
@@ -501,12 +501,26 @@ built-in renderer-suffix lookup so the two don't collide.
 ## Status enum (`LeaveApplication.status`)
 
 `DRAFT, SUBMITTED, PENDING_HOD_REVIEW, HOD_RECOMMENDED,
+PENDING_CAG_REVIEW, CAG_RECOMMENDED, PENDING_AAG_REVIEW, AAG_RECOMMENDED,
 RETURNED_TO_EMPLOYEE, PENDING_HR_REVIEW, HR_VERIFIED, RETURNED_TO_HOD,
 PENDING_AUTHORIZATION, APPROVED, DENIED, PDF_GENERATED, COMPLETED, ARCHIVED`
 
 Note: `SUBMITTED` is transient — `/submit/` moves straight to
-`PENDING_HOD_REVIEW` in the same transaction (the "SUBMITTED" audit
-action is still logged separately for traceability).
+`PENDING_HOD_REVIEW`, or `PENDING_CAG_REVIEW`/`PENDING_AAG_REVIEW` (see
+below), in the same transaction (the "SUBMITTED" audit action is still
+logged separately for traceability).
+
+`requires_cag_review`/`requires_aag_review` (read-only booleans on
+`LeaveApplicationSerializer`) tell the frontend which track an application
+follows. CAG takes priority: an applicant whose role is itself a
+`CAG_APPLICANT_ROLE` (see the Users section above) always routes through
+CAG, even if they also belong to a Division. Otherwise, an applicant who
+belongs to a Division routes through AAG — matched to the AAG assigned to
+that specific division (`apps.leave.permissions.matched_aag_for`), the same
+way a Head of Department is matched by `department`. Both tracks skip the
+normal HOD stage entirely (no `recommendation`/Section B1 in that case —
+`cag_review`/`aag_review` carries the equivalent decision instead) and
+auto-route straight to HR on a recommendation.
 
 ## Deferred to a later phase (do not assume these exist)
 

@@ -10,31 +10,27 @@ import {
   useCreateDepartmentMutation,
   useCreateDesignationMutation,
   useCreateDivisionMutation,
-  useCreateSupportDivisionMutation,
   useCreateWorkStationMutation,
   useDeleteDepartmentMutation,
   useDeleteDesignationMutation,
   useDeleteDivisionMutation,
-  useDeleteSupportDivisionMutation,
   useDeleteWorkStationMutation,
   useGetDepartmentsQuery,
   useGetDesignationsQuery,
   useGetDivisionsQuery,
-  useGetSupportDivisionsQuery,
   useGetWorkStationsQuery,
   useUpdateDepartmentMutation,
   useUpdateDesignationMutation,
   useUpdateDivisionMutation,
-  useUpdateSupportDivisionMutation,
   useUpdateWorkStationMutation,
 } from "@/features/departments/orgApi";
 import type { WorkStation } from "@/features/departments/orgApi";
 
 // Basic admin CRUD (list + create/edit/delete) for departments, divisions,
-// support divisions, work stations, designations —
-// /api/{departments,divisions,support-divisions,work-stations,designations}/
-// (SYSTEM_ADMIN write). An employee belongs to exactly one of Department,
-// Division or Support Division, plus exactly one Work Station.
+// work stations, designations —
+// /api/{departments,divisions,work-stations,designations}/
+// (SYSTEM_ADMIN write). An employee belongs to exactly one of Department or
+// Division, plus exactly one Work Station.
 export default function AdminOrganizationPage() {
   return (
     <AppShell>
@@ -53,13 +49,6 @@ export default function AdminOrganizationPage() {
           useCreate={useCreateDivisionMutation}
           useUpdate={useUpdateDivisionMutation}
           useDelete={useDeleteDivisionMutation}
-        />
-        <NamedUnitPanel
-          title="Support Divisions"
-          useList={useGetSupportDivisionsQuery}
-          useCreate={useCreateSupportDivisionMutation}
-          useUpdate={useUpdateSupportDivisionMutation}
-          useDelete={useDeleteSupportDivisionMutation}
         />
         <NamedUnitPanel
           title="Designations"

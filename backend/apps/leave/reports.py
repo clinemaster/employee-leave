@@ -29,7 +29,6 @@ REPORT_COLUMNS = [
     ('employee__check_number', 'Check Number'),
     ('employee__department__name', 'Department'),
     ('employee__section__name', 'Section'),
-    ('employee__unit__name', 'Unit'),
     ('employee__work_station__name', 'Work Station'),
     ('leave_type__name', 'Leave Type'),
     ('status', 'Status'),
@@ -49,7 +48,7 @@ class IsReportingRole(IsAuthenticatedAndRole):
 def _filtered_queryset(params):
     qs = LeaveApplication.objects.select_related(
         'employee', 'employee__department', 'employee__section',
-        'employee__unit', 'employee__work_station', 'leave_type',
+        'employee__work_station', 'leave_type',
     )
 
     start_date = params.get('start_date')

@@ -6,13 +6,16 @@
 export type Role =
   | "EMPLOYEE"
   | "HEAD_OF_DEPARTMENT"
-  | "HEAD_OF_DIVISION"
-  | "HEAD_OF_SUPPORT_DIVISION"
+  | "DAG"
   | "HEAD_OF_SECTION"
-  | "HEAD_OF_UNIT"
   | "HR_ADMIN"
   | "AUTHORIZING_OFFICER"
   | "CAG"
+  | "AAG"
+  | "CHIEF_ACCOUNTANT"
+  | "DAHRM"
+  | "ADA"
+  | "CHIEF_EXTERNAL_AUDITOR"
   | "SYSTEM_ADMIN";
 
 // Applicant roles whose leave applications must be routed through CAG
@@ -21,17 +24,19 @@ export type Role =
 export const CAG_APPLICANT_ROLES: Role[] = [
   "AUTHORIZING_OFFICER",
   "HEAD_OF_DEPARTMENT",
-  "HEAD_OF_SUPPORT_DIVISION",
-  "HEAD_OF_DIVISION",
+  "DAG",
+  "AAG",
+  "CHIEF_ACCOUNTANT",
+  "DAHRM",
+  "ADA",
+  "CHIEF_EXTERNAL_AUDITOR",
 ];
 
-// Any of the five "line manager" roles that review Section B1.
+// Any of the "line manager" roles that review Section B1.
 export const HOD_ROLES: Role[] = [
   "HEAD_OF_DEPARTMENT",
-  "HEAD_OF_DIVISION",
-  "HEAD_OF_SUPPORT_DIVISION",
+  "DAG",
   "HEAD_OF_SECTION",
-  "HEAD_OF_UNIT",
 ];
 
 export interface User {
@@ -55,12 +60,8 @@ export interface User {
   department_name?: string | null;
   division?: number | null;
   division_name?: string | null;
-  support_division?: number | null;
-  support_division_name?: string | null;
   section?: number | null;
   section_name?: string | null;
-  unit?: number | null;
-  unit_name?: string | null;
   manager?: number | null;
   phone_number?: string | null;
   vote_code?: string | null;
@@ -77,12 +78,12 @@ export function allUserRoles(user: Pick<User, "role" | "additional_roles"> | nul
 }
 
 // The name of whichever org unit the user belongs to (they belong to
-// exactly one of department/division/support_division) — for display.
+// exactly one of department/division) — for display.
 export function orgUnitName(
-  user: Pick<User, "department_name" | "division_name" | "support_division_name"> | null | undefined
+  user: Pick<User, "department_name" | "division_name"> | null | undefined
 ): string | null {
   if (!user) return null;
-  return user.department_name ?? user.division_name ?? user.support_division_name ?? null;
+  return user.department_name ?? user.division_name ?? null;
 }
 
 export type LeaveStatus =
@@ -92,6 +93,8 @@ export type LeaveStatus =
   | "HOD_RECOMMENDED"
   | "PENDING_CAG_REVIEW"
   | "CAG_RECOMMENDED"
+  | "PENDING_AAG_REVIEW"
+  | "AAG_RECOMMENDED"
   | "RETURNED_TO_EMPLOYEE"
   | "PENDING_HR_REVIEW"
   | "HR_VERIFIED"
@@ -157,6 +160,14 @@ export interface CAGReview {
   created_at?: string;
 }
 
+export interface AAGReview {
+  recommended: boolean;
+  comments?: string;
+  signature_name?: string;
+  signature_designation?: string;
+  created_at?: string;
+}
+
 // Section A fields — editable by the applicant only, and only while
 // status is DRAFT or RETURNED_TO_EMPLOYEE (enforced server-side).
 export interface LeaveApplication {
@@ -198,8 +209,14 @@ export interface LeaveApplication {
   // LeaveApplication.requires_cag_review. True if this application must be
   // routed through CAG review instead of the normal HOD stage.
   requires_cag_review?: boolean;
+  // Derived server-side from the employee's division — see backend
+  // LeaveApplication.requires_aag_review. True if this application must be
+  // routed through AAG review instead of the normal HOD stage (only when
+  // requires_cag_review is false — CAG takes priority).
+  requires_aag_review?: boolean;
   recommendation?: LeaveRecommendation | null;
   cag_review?: CAGReview | null;
+  aag_review?: AAGReview | null;
   hr_review?: HRReview | null;
   approval?: ApprovalSection | null;
   working_days_preview?: number;

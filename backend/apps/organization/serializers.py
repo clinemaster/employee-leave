@@ -1,8 +1,6 @@
 from rest_framework import serializers
 
-from .models import (
-    Department, Designation, Division, Section, SupportDivision, Unit, WorkStation,
-)
+from .models import Department, Designation, Division, Section, WorkStation
 
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -17,22 +15,10 @@ class DivisionSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'code', 'is_active']
 
 
-class SupportDivisionSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SupportDivision
-        fields = ['id', 'name', 'code', 'is_active']
-
-
 class SectionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Section
         fields = ['id', 'name', 'code', 'department', 'is_active']
-
-
-class UnitSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Unit
-        fields = ['id', 'name', 'code', 'section', 'is_active']
 
 
 class WorkStationSerializer(serializers.ModelSerializer):

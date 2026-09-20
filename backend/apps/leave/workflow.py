@@ -10,10 +10,16 @@ Status flow (spec):
     -> SUBMITTED (employee submits)
   SUBMITTED
     -> PENDING_HOD_REVIEW (system, immediately routes to HOD)
+       (or PENDING_CAG_REVIEW / PENDING_AAG_REVIEW -- see below)
   PENDING_HOD_REVIEW
     -> HOD_RECOMMENDED (HOD recommends/declines, Section B1)
     -> RETURNED_TO_EMPLOYEE (HOD returns for correction)
   HOD_RECOMMENDED
+    -> PENDING_HR_REVIEW (system, routes to HR)
+  PENDING_AAG_REVIEW
+    -> AAG_RECOMMENDED (AAG recommends, stands in for Section B1)
+    -> DENIED (AAG rejects, terminal)
+  AAG_RECOMMENDED
     -> PENDING_HR_REVIEW (system, routes to HR)
   RETURNED_TO_EMPLOYEE
     -> SUBMITTED (employee resubmits after correcting Section A)
@@ -47,27 +53,32 @@ from apps.notifications.models import Notification
 
 from .models import ApplicationStatus as S
 from .permissions import (
-    effective_reviewer_for, is_authorizing_officer, is_cag_reviewer, is_hr_admin,
-    is_system_admin, needs_cag_review,
+    effective_reviewer_for, is_aag_reviewer, is_authorizing_officer, is_cag_reviewer,
+    is_hr_admin, is_system_admin, matched_aag_for, needs_aag_review, needs_cag_review,
 )
 
 # Maps action name -> (from_statuses, to_status). `submit` is special-cased in
 # perform_transition: its target status depends on whether the applicant's
 # role requires CAG review (see needs_cag_review) — PENDING_CAG_REVIEW
-# instead of PENDING_HOD_REVIEW. For those applicants CAG review stands in
-# for the HOD stage entirely (no HOD box in that track), so `cag_review`
-# (recommend) reuses the same 'route_to_hr' auto-follow-on as the normal
-# HOD 'recommend', and `cag_reject` ends the workflow the same way `deny`
-# does — see spec: employees holding AUTHORIZING_OFFICER/HEAD_OF_DEPARTMENT/
-# HEAD_OF_SUPPORT_DIVISION/HEAD_OF_DIVISION must never be able to reach HR or
-# the Authorizing Officer without a CAG recommendation first.
+# instead of PENDING_HOD_REVIEW — or, failing that, whether the applicant
+# belongs to a Division (see needs_aag_review) — PENDING_AAG_REVIEW. For
+# those applicants CAG/AAG review stands in for the HOD stage entirely (no
+# HOD box in that track), so `cag_review`/`aag_review` (recommend) reuse the
+# same 'route_to_hr' auto-follow-on as the normal HOD 'recommend', and
+# `cag_reject`/`aag_reject` end the workflow the same way `deny` does — see
+# spec: employees holding AUTHORIZING_OFFICER/HEAD_OF_DEPARTMENT/DAG/AAG/
+# CHIEF_ACCOUNTANT/DAHRM/ADA/CHIEF_EXTERNAL_AUDITOR must never be able to
+# reach HR or the Authorizing Officer without a CAG recommendation first, and
+# Division employees (outside that set) must never bypass AAG.
 TRANSITIONS = {
     'submit': ({S.DRAFT, S.RETURNED_TO_EMPLOYEE}, S.PENDING_HOD_REVIEW),
     'recommend': ({S.PENDING_HOD_REVIEW}, S.HOD_RECOMMENDED),
     'return_to_employee': ({S.PENDING_HOD_REVIEW}, S.RETURNED_TO_EMPLOYEE),
     'cag_review': ({S.PENDING_CAG_REVIEW}, S.CAG_RECOMMENDED),
     'cag_reject': ({S.PENDING_CAG_REVIEW}, S.DENIED),
-    'route_to_hr': ({S.HOD_RECOMMENDED, S.CAG_RECOMMENDED}, S.PENDING_HR_REVIEW),
+    'aag_review': ({S.PENDING_AAG_REVIEW}, S.AAG_RECOMMENDED),
+    'aag_reject': ({S.PENDING_AAG_REVIEW}, S.DENIED),
+    'route_to_hr': ({S.HOD_RECOMMENDED, S.CAG_RECOMMENDED, S.AAG_RECOMMENDED}, S.PENDING_HR_REVIEW),
     'verify': ({S.PENDING_HR_REVIEW}, S.HR_VERIFIED),
     'return_to_hod': ({S.PENDING_HR_REVIEW}, S.RETURNED_TO_HOD),
     'resubmit_to_hr': ({S.RETURNED_TO_HOD}, S.PENDING_HR_REVIEW),
@@ -106,6 +117,15 @@ def _check_role_for_action(user, application, action):
                     'No CAG reviewer is currently available to review this application. '
                     'Ask a SYSTEM_ADMIN to assign a CAG reviewer before submitting.'
                 )
+        elif needs_aag_review(application.employee):
+            if matched_aag_for(application.employee) is None:
+                # Same guard, for the AAG track: PENDING_AAG_REVIEW only
+                # accepts aag_review/aag_reject, both gated on being the AAG
+                # matched to this employee's specific division.
+                raise WorkflowError(
+                    'No AAG reviewer is currently assigned to your division. '
+                    'Ask a SYSTEM_ADMIN to assign one before submitting.'
+                )
         elif effective_reviewer_for(application) is None:
             # Without a routed OR fallback reviewer, the application would
             # move to PENDING_HOD_REVIEW with no one able to act on it
@@ -113,10 +133,9 @@ def _check_role_for_action(user, application, action):
             # visible reason why. Reject at submit time instead, with a
             # message that tells the applicant/admin what to fix.
             raise WorkflowError(
-                'You have no assigned Head of Department/Division/Support Division/Section/'
-                'Unit to review this application, and no HR Admin or Authorizing Officer is '
-                'available as a fallback. Ask a SYSTEM_ADMIN to assign a reviewer before '
-                'submitting.'
+                'You have no assigned Head of Department/Division/Section to review this '
+                'application, and no HR Admin or Authorizing Officer is available as a '
+                'fallback. Ask a SYSTEM_ADMIN to assign a reviewer before submitting.'
             )
     elif action in ('recommend', 'return_to_employee'):
         reviewer = effective_reviewer_for(application)
@@ -125,6 +144,12 @@ def _check_role_for_action(user, application, action):
     elif action in ('cag_review', 'cag_reject'):
         if not is_cag_reviewer(user):
             raise PermissionDenied('Only a CAG reviewer may act here.')
+    elif action in ('aag_review', 'aag_reject'):
+        if not is_aag_reviewer(user):
+            raise PermissionDenied('Only an AAG reviewer may act here.')
+        matched = matched_aag_for(application.employee)
+        if matched is None or matched.id != user.id:
+            raise PermissionDenied('This application is not routed to you.')
     elif action in ('verify', 'return_to_hod'):
         if not is_hr_admin(user):
             raise PermissionDenied('Only HR Admin may act here.')
@@ -183,7 +208,14 @@ def perform_transition(application, user, action, comments='', request=None):
         # Route to CAG instead of the normal HOD stage for applicants whose
         # role requires it (see needs_cag_review) — CAG stands in for HOD for
         # that track, so it must never fall through to PENDING_HOD_REVIEW.
-        to_status = S.PENDING_CAG_REVIEW if needs_cag_review(application.employee) else S.PENDING_HOD_REVIEW
+        # Failing that, Division employees (see needs_aag_review) route to
+        # AAG instead of the normal HOD stage.
+        if needs_cag_review(application.employee):
+            to_status = S.PENDING_CAG_REVIEW
+        elif needs_aag_review(application.employee):
+            to_status = S.PENDING_AAG_REVIEW
+        else:
+            to_status = S.PENDING_HOD_REVIEW
     if application.status not in allowed_from:
         raise WorkflowError(
             f'Cannot {action} an application in status {application.status}. '
@@ -210,7 +242,7 @@ def perform_transition(application, user, action, comments='', request=None):
 
     # System-triggered auto-follow-on transitions (routing hops with no human
     # decision attached) happen immediately, inside the same transaction.
-    if action in ('recommend', 'cag_review'):
+    if action in ('recommend', 'cag_review', 'aag_review'):
         application = perform_transition(application, user, 'route_to_hr', comments='auto-route to HR')
     elif action == 'verify':
         application = perform_transition(application, user, 'route_to_authorization', comments='auto-route to Authorizing Officer')
@@ -239,7 +271,13 @@ def _send_transition_notifications(application, action, actor, comments=''):
     employee_id = application.employee_id
     employee = application.employee
     routed_to_cag = needs_cag_review(employee)
-    hod = None if routed_to_cag else effective_reviewer_for(application)
+    routed_to_aag = (not routed_to_cag) and needs_aag_review(employee)
+    if routed_to_cag:
+        hod = None
+    elif routed_to_aag:
+        hod = matched_aag_for(employee)
+    else:
+        hod = effective_reviewer_for(application)
     hod_id = hod.id if hod else None
 
     submit_messages = [
@@ -248,6 +286,10 @@ def _send_transition_notifications(application, action, actor, comments=''):
     if routed_to_cag:
         submit_messages.append(
             ('__CAG__', f'New leave application {application.application_number} is awaiting your CAG review.')
+        )
+    elif routed_to_aag:
+        submit_messages.append(
+            (hod_id, f'Leave application {application.application_number} is awaiting your AAG review.')
         )
     else:
         submit_messages.append(
@@ -267,6 +309,12 @@ def _send_transition_notifications(application, action, actor, comments=''):
         ],
         'cag_reject': [
             (employee_id, f'Your leave application {application.application_number} has been rejected by CAG. Reason: {comments}'),
+        ],
+        'aag_review': [
+            (employee_id, f'Your leave application {application.application_number} has been recommended by AAG and forwarded to HR.'),
+        ],
+        'aag_reject': [
+            (employee_id, f'Your leave application {application.application_number} has been rejected by AAG. Reason: {comments}'),
         ],
         'route_to_hr': [],
         'verify': [
@@ -300,13 +348,14 @@ def _send_transition_notifications(application, action, actor, comments=''):
             continue
         _notify(user_id, message, application)
 
-    _send_transition_emails(application, action, employee, hod, routed_to_cag, comments)
+    _send_transition_emails(application, action, employee, hod, routed_to_cag, routed_to_aag, comments)
 
 
-def _send_transition_emails(application, action, employee, hod, routed_to_cag=False, comments=''):
+def _send_transition_emails(application, action, employee, hod, routed_to_cag=False, routed_to_aag=False, comments=''):
     """
     Real email delivery, per spec section 29's routing: employee submits ->
-    notify HOD (or, for the CAG track, all CAG reviewers); HOD/CAG
+    notify HOD (or, for the CAG track, all CAG reviewers; or, for the AAG
+    track, the AAG matched to the employee's division); HOD/CAG/AAG
     recommends -> notify HR; HR verifies -> notify AO; AO approves -> notify
     Employee; application completed -> notify Employee+HR. Queued via
     transaction.on_commit so a slow/broken SMTP server never blocks or
@@ -323,6 +372,9 @@ def _send_transition_emails(application, action, employee, hod, routed_to_cag=Fa
         if routed_to_cag:
             for cag_user in _cag_reviewers():
                 send_workflow_email('submit_cag', cag_user, ctx)
+        elif routed_to_aag:
+            if hod is not None:
+                send_workflow_email('submit_aag', hod, ctx)
         else:
             send_workflow_email('submit_hod', hod, ctx)
     elif action == 'recommend':
@@ -333,6 +385,10 @@ def _send_transition_emails(application, action, employee, hod, routed_to_cag=Fa
         send_workflow_email('cag_review', employee, ctx)
     elif action == 'cag_reject':
         send_workflow_email('cag_reject', employee, ctx)
+    elif action == 'aag_review':
+        send_workflow_email('aag_review', employee, ctx)
+    elif action == 'aag_reject':
+        send_workflow_email('aag_reject', employee, ctx)
     elif action == 'route_to_hr':
         # HOD recommended (or CAG recommended) -> notify HR (all active HR_ADMIN users).
         for hr_user in _hr_admins():

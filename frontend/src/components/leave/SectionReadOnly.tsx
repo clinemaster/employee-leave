@@ -62,6 +62,59 @@ export function SectionB1ReadOnly({ application }: { application: LeaveApplicati
   );
 }
 
+// Shown in place of SectionB1ReadOnly for applicants whose role requires CAG
+// review (application.requires_cag_review) — CAG stands in for the line-
+// manager stage for these applicants, so this is what carries their
+// comments forward to HR/the Authorizing Officer/the employee's own view.
+export function SectionCAGReadOnly({ application }: { application: LeaveApplication }) {
+  const cag = application.cag_review;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Section B1 — CAG Review</CardTitle>
+      </CardHeader>
+      {cag ? (
+        <>
+          <Row label="Recommended" value={cag.recommended} />
+          <Row label="Comments" value={cag.comments} />
+          <Row label="Signed By" value={cag.signature_name} />
+          <Row label="Designation" value={cag.signature_designation} />
+          <Row label="Date" value={cag.created_at} />
+        </>
+      ) : (
+        <p className="text-sm text-gray-500">Not yet reviewed by CAG.</p>
+      )}
+    </Card>
+  );
+}
+
+// Shown in place of SectionB1ReadOnly for Division employees whose role
+// doesn't itself require CAG review (application.requires_aag_review) — AAG
+// stands in for the line-manager stage for these employees, so this is what
+// carries their comments forward to HR/the Authorizing Officer/the
+// employee's own view.
+export function SectionAAGReadOnly({ application }: { application: LeaveApplication }) {
+  const aag = application.aag_review;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Section B1 — AAG Review</CardTitle>
+      </CardHeader>
+      {aag ? (
+        <>
+          <Row label="Recommended" value={aag.recommended} />
+          <Row label="Comments" value={aag.comments} />
+          <Row label="Signed By" value={aag.signature_name} />
+          <Row label="Designation" value={aag.signature_designation} />
+          <Row label="Date" value={aag.created_at} />
+        </>
+      ) : (
+        <p className="text-sm text-gray-500">Not yet reviewed by AAG.</p>
+      )}
+    </Card>
+  );
+}
+
 export function SectionB2ReadOnly({ application }: { application: LeaveApplication }) {
   const hr = application.hr_review;
   return (

@@ -11,7 +11,6 @@ import {
   useGetDepartmentsQuery,
   useGetDesignationsQuery,
   useGetDivisionsQuery,
-  useGetSupportDivisionsQuery,
   useGetWorkStationsQuery,
 } from "@/features/departments/orgApi";
 import { extractErrorMessage } from "@/lib/api/errors";
@@ -21,23 +20,31 @@ const PAGE_SIZE = 25;
 
 // Roles exempt from the "belongs to exactly one org unit" rule (mirrors
 // apps.accounts.models.ORG_UNIT_EXEMPT_ROLES on the backend) — organization-
-// wide roles that aren't tied to a single department/division/support division.
-const ORG_UNIT_EXEMPT_ROLES: Role[] = ["SYSTEM_ADMIN", "HR_ADMIN", "AUTHORIZING_OFFICER", "CAG"];
+// wide roles that aren't tied to a single department/division. AAG is
+// deliberately NOT exempt: an AAG user is matched to a specific division
+// (like DAG) to review that division's employees.
+const ORG_UNIT_EXEMPT_ROLES: Role[] = [
+  "SYSTEM_ADMIN", "HR_ADMIN", "AUTHORIZING_OFFICER", "CAG",
+  "CHIEF_ACCOUNTANT", "DAHRM", "ADA", "CHIEF_EXTERNAL_AUDITOR",
+];
 
-type OrgUnitType = "department" | "division" | "support_division";
+type OrgUnitType = "department" | "division";
 
 // Also doubles as the priority order used to pick the base `role` out of a
 // set of checked roles (see splitRoles) — earlier wins.
 const roles: Role[] = [
   "EMPLOYEE",
   "HEAD_OF_DEPARTMENT",
-  "HEAD_OF_DIVISION",
-  "HEAD_OF_SUPPORT_DIVISION",
+  "DAG",
   "HEAD_OF_SECTION",
-  "HEAD_OF_UNIT",
   "HR_ADMIN",
   "AUTHORIZING_OFFICER",
   "CAG",
+  "AAG",
+  "CHIEF_ACCOUNTANT",
+  "DAHRM",
+  "ADA",
+  "CHIEF_EXTERNAL_AUDITOR",
   "SYSTEM_ADMIN",
 ];
 
@@ -88,15 +95,13 @@ export default function AdminUsersPage() {
 
   const { data: departments } = useGetDepartmentsQuery();
   const { data: divisions } = useGetDivisionsQuery();
-  const { data: supportDivisions } = useGetSupportDivisionsQuery();
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   // New users are always created as EMPLOYEE; other roles are assigned
   // afterward via the "Roles" column/popover in the table below.
   const needsOrgUnit = !ORG_UNIT_EXEMPT_ROLES.includes("EMPLOYEE");
-  const orgUnitOptions =
-    orgUnitType === "department" ? departments : orgUnitType === "division" ? divisions : supportDivisions;
+  const orgUnitOptions = orgUnitType === "department" ? departments : divisions;
 
   async function handleCreate() {
     if (!username.trim() || !fullName.trim() || !checkNumber.trim()) return;
@@ -180,16 +185,11 @@ export default function AdminUsersPage() {
                 >
                   <option value="department">Department</option>
                   <option value="division">Division</option>
-                  <option value="support_division">Support Division</option>
                 </select>
               </div>
               <div>
                 <Label htmlFor="orgUnit">
-                  {orgUnitType === "department"
-                    ? "Department"
-                    : orgUnitType === "division"
-                      ? "Division"
-                      : "Support Division"}
+                  {orgUnitType === "department" ? "Department" : "Division"}
                 </Label>
                 <select
                   id="orgUnit"
@@ -351,7 +351,6 @@ function RolesCell({
 
 function initialOrgUnitType(user: User): OrgUnitType {
   if (user.division) return "division";
-  if (user.support_division) return "support_division";
   return "department";
 }
 
@@ -359,7 +358,6 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [updateUser, { isLoading: isSaving }] = useUpdateUserMutation();
   const { data: departments } = useGetDepartmentsQuery();
   const { data: divisions } = useGetDivisionsQuery();
-  const { data: supportDivisions } = useGetSupportDivisionsQuery();
   const { data: designations } = useGetDesignationsQuery();
   const { data: workStations } = useGetWorkStationsQuery();
 
@@ -375,13 +373,12 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [workStation, setWorkStation] = useState(user.work_station != null ? String(user.work_station) : "");
   const [orgUnitType, setOrgUnitType] = useState<OrgUnitType>(initialOrgUnitType(user));
   const [orgUnitId, setOrgUnitId] = useState(
-    String(user.department ?? user.division ?? user.support_division ?? "")
+    String(user.department ?? user.division ?? "")
   );
   const [error, setError] = useState<string | null>(null);
 
   const needsOrgUnit = !ORG_UNIT_EXEMPT_ROLES.includes(user.role);
-  const orgUnitOptions =
-    orgUnitType === "department" ? departments : orgUnitType === "division" ? divisions : supportDivisions;
+  const orgUnitOptions = orgUnitType === "department" ? departments : divisions;
 
   async function handleSave() {
     if (!username.trim() || !fullName.trim() || !checkNumber.trim()) return;
@@ -402,7 +399,6 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         work_station: workStation ? Number(workStation) : null,
         department: null,
         division: null,
-        support_division: null,
         ...(needsOrgUnit ? { [orgUnitType]: Number(orgUnitId) } : {}),
       }).unwrap();
       onClose();
@@ -497,16 +493,11 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
               >
                 <option value="department">Department</option>
                 <option value="division">Division</option>
-                <option value="support_division">Support Division</option>
               </select>
             </div>
             <div>
               <Label htmlFor="edit-orgUnit">
-                {orgUnitType === "department"
-                  ? "Department"
-                  : orgUnitType === "division"
-                    ? "Division"
-                    : "Support Division"}
+                {orgUnitType === "department" ? "Department" : "Division"}
               </Label>
               <select
                 id="edit-orgUnit"

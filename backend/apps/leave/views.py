@@ -295,7 +295,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         if getattr(self, 'swagger_fake_view', False):
             return LeaveApplication.objects.none()
         qs = LeaveApplication.objects.select_related(
-            'employee', 'leave_type', 'recommendation', 'cag_review', 'hr_review', 'approval'
+            'employee', 'leave_type', 'recommendation', 'cag_review', 'aag_review', 'hr_review', 'approval'
         ).prefetch_related(
             'dependants', 'travel_routes__passengers__person_type',
             'taxi_expenses', 'mizigo_items',
@@ -340,6 +340,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
                 'recommend': 'recommended', 'verify': 'verified',
                 'approve': 'approved', 'deny': 'approved',
                 'cag_review': 'recommended', 'cag_reject': 'recommended',
+                'aag_review': 'recommended', 'aag_reject': 'recommended',
             }
             obj = getattr(application, section_serializer_field, None)
             if obj is None:
@@ -350,7 +351,7 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             obj.signature_name = data.get('signature_name', '')
             obj.signature_designation = data.get('signature_designation', '')
             decision_value = data['decision']
-            if action_name in ('deny', 'cag_reject'):
+            if action_name in ('deny', 'cag_reject', 'aag_reject'):
                 decision_value = False
             setattr(obj, decision_field_map.get(action_name, 'recommended'), decision_value)
             obj.save()
@@ -391,6 +392,23 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
         if not (request.data.get('comments') or '').strip():
             raise ValidationError({'comments': 'A rejection reason is required.'})
         return self._do_transition(request, pk, 'cag_reject', 'cag_review', LeaveCAGReview)
+
+    @action(detail=True, methods=['post'], url_path='aag-review')
+    def aag_review(self, request, pk=None):
+        """AAG recommends: PENDING_AAG_REVIEW -> AAG_RECOMMENDED -> (auto) PENDING_HR_REVIEW."""
+        from .models import LeaveAAGReview
+        data = request.data.copy()
+        data.setdefault('decision', True)
+        request._full_data = data
+        return self._do_transition(request, pk, 'aag_review', 'aag_review', LeaveAAGReview)
+
+    @action(detail=True, methods=['post'], url_path='aag-reject')
+    def aag_reject(self, request, pk=None):
+        """AAG rejects: PENDING_AAG_REVIEW -> DENIED (terminal). Reason is mandatory."""
+        from .models import LeaveAAGReview
+        if not (request.data.get('comments') or '').strip():
+            raise ValidationError({'comments': 'A rejection reason is required.'})
+        return self._do_transition(request, pk, 'aag_reject', 'aag_review', LeaveAAGReview)
 
     @action(detail=True, methods=['post'])
     def verify(self, request, pk=None):

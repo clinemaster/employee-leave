@@ -62,6 +62,27 @@ _TEMPLATES = {
         'Reason: {comments}\n\n'
         '- NAOT Digital Leave Management System',
     ),
+    'submit_aag': (
+        'Leave application {application_number} awaiting your AAG review',
+        'Dear {recipient_name},\n\n'
+        'New leave application {application_number} from {employee_name} is '
+        'awaiting your AAG review.\n\n'
+        '- NAOT Digital Leave Management System',
+    ),
+    'aag_review': (
+        'Leave application {application_number} recommended by AAG',
+        'Dear {recipient_name},\n\n'
+        'Your leave application {application_number} has been recommended by '
+        'AAG and forwarded to HR.\n\n'
+        '- NAOT Digital Leave Management System',
+    ),
+    'aag_reject': (
+        'Leave application {application_number} rejected by AAG',
+        'Dear {recipient_name},\n\n'
+        'Your leave application {application_number} has been rejected by AAG. '
+        'Reason: {comments}\n\n'
+        '- NAOT Digital Leave Management System',
+    ),
     'recommend': (
         'Leave application {application_number} recommended',
         'Dear {recipient_name},\n\n'

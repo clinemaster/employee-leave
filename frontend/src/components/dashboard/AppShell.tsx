@@ -19,35 +19,48 @@ const navByRole: Record<string, { label: string; href: string }[]> = {
     { label: "New Leave Application", href: "/employee/leave/new" },
   ],
   HEAD_OF_DEPARTMENT: [
+    { label: "Review Queue", href: "/hod/review-queue" },
     { label: "Recommendations", href: "/hod/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
-  HEAD_OF_DIVISION: [
-    { label: "Recommendations", href: "/hod/applications" },
-    { label: "My Applications", href: "/employee/applications" },
-  ],
-  HEAD_OF_SUPPORT_DIVISION: [
+  DAG: [
+    { label: "Review Queue", href: "/hod/review-queue" },
     { label: "Recommendations", href: "/hod/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
   HEAD_OF_SECTION: [
-    { label: "Recommendations", href: "/hod/applications" },
-    { label: "My Applications", href: "/employee/applications" },
-  ],
-  HEAD_OF_UNIT: [
+    { label: "Review Queue", href: "/hod/review-queue" },
     { label: "Recommendations", href: "/hod/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
   HR_ADMIN: [
+    { label: "Review Queue", href: "/hr/review-queue" },
     { label: "Applications", href: "/hr/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
   AUTHORIZING_OFFICER: [
+    { label: "Review Queue", href: "/authorization/review-queue" },
     { label: "Applications", href: "/authorization/applications" },
     { label: "My Applications", href: "/employee/applications" },
   ],
   CAG: [
     { label: "CAG Review Queue", href: "/cag/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  AAG: [
+    { label: "AAG Review Queue", href: "/aag/applications" },
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  CHIEF_ACCOUNTANT: [
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  DAHRM: [
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  ADA: [
+    { label: "My Applications", href: "/employee/applications" },
+  ],
+  CHIEF_EXTERNAL_AUDITOR: [
     { label: "My Applications", href: "/employee/applications" },
   ],
   SYSTEM_ADMIN: [

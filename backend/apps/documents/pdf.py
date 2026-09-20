@@ -262,15 +262,36 @@ def _build_pdf_bytes(application):
         ['Contact Address', application.contact_address or '—', 'Dependants', dependants_text],
     ]))
 
-    rec = getattr(application, 'recommendation', None)
-    elements.append(Paragraph('SECTION B1: Recommendation by Head of Department/Section/Unit', heading_style))
-    elements.append(_kv_table([
-        ['Recommended', ('Yes' if rec and rec.recommended else 'No') if rec and rec.recommended is not None else '—',
-         'Reviewer', (rec.reviewer.full_name if rec and rec.reviewer else '—')],
-        ['Comments', (rec.comments if rec else '—'), '', ''],
-    ]))
-    elements.append(Spacer(1, 0.2 * cm))
-    elements.append(_signature_block('Head of Department/Section/Unit'))
+    if application.requires_cag_review:
+        cag = getattr(application, 'cag_review', None)
+        elements.append(Paragraph('SECTION B1: CAG Review', heading_style))
+        elements.append(_kv_table([
+            ['Recommended', ('Yes' if cag and cag.recommended else 'No') if cag and cag.recommended is not None else '—',
+             'Reviewer', (cag.reviewer.full_name if cag and cag.reviewer else '—')],
+            ['Comments', (cag.comments if cag else '—'), '', ''],
+        ]))
+        elements.append(Spacer(1, 0.2 * cm))
+        elements.append(_signature_block('CAG'))
+    elif application.requires_aag_review:
+        aag = getattr(application, 'aag_review', None)
+        elements.append(Paragraph('SECTION B1: AAG Review', heading_style))
+        elements.append(_kv_table([
+            ['Recommended', ('Yes' if aag and aag.recommended else 'No') if aag and aag.recommended is not None else '—',
+             'Reviewer', (aag.reviewer.full_name if aag and aag.reviewer else '—')],
+            ['Comments', (aag.comments if aag else '—'), '', ''],
+        ]))
+        elements.append(Spacer(1, 0.2 * cm))
+        elements.append(_signature_block('AAG'))
+    else:
+        rec = getattr(application, 'recommendation', None)
+        elements.append(Paragraph('SECTION B1: Recommendation by Head of Department/Section', heading_style))
+        elements.append(_kv_table([
+            ['Recommended', ('Yes' if rec and rec.recommended else 'No') if rec and rec.recommended is not None else '—',
+             'Reviewer', (rec.reviewer.full_name if rec and rec.reviewer else '—')],
+            ['Comments', (rec.comments if rec else '—'), '', ''],
+        ]))
+        elements.append(Spacer(1, 0.2 * cm))
+        elements.append(_signature_block('Head of Department/Section'))
 
     hr = getattr(application, 'hr_review', None)
     elements.append(Paragraph('SECTION B2: HR Verification', heading_style))

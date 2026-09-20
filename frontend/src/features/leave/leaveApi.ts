@@ -174,6 +174,32 @@ export const leaveApi = baseApi.injectEndpoints({
       ],
     }),
 
+    // AAG review — mandatory stand-in for Section B1 for Division employees
+    // whose role doesn't itself require CAG review (see
+    // LeaveApplication.requires_aag_review). `decision: true` = recommended
+    // (defaulted server-side).
+    aagReviewLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/aag-review/`, method: "POST", body }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "LeaveApplication", id },
+        { type: "LeaveApplications", id: "LIST" },
+        "Dashboard",
+        "LeaveBalances",
+      ],
+    }),
+
+    // AAG rejection — terminal, `comments` (rejection reason) is mandatory
+    // (enforced server-side).
+    aagRejectLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
+      query: ({ id, ...body }) => ({ url: `leave-applications/${id}/aag-reject/`, method: "POST", body }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "LeaveApplication", id },
+        { type: "LeaveApplications", id: "LIST" },
+        "Dashboard",
+        "LeaveBalances",
+      ],
+    }),
+
     // Section B2 — HR_ADMIN. `decision: true` = verified.
     verifyLeaveApplication: builder.mutation<LeaveApplication, WorkflowActionBody>({
       query: ({ id, ...body }) => ({ url: `leave-applications/${id}/verify/`, method: "POST", body }),
@@ -243,6 +269,8 @@ export const {
   useRecommendLeaveApplicationMutation,
   useCagReviewLeaveApplicationMutation,
   useCagRejectLeaveApplicationMutation,
+  useAagReviewLeaveApplicationMutation,
+  useAagRejectLeaveApplicationMutation,
   useReturnLeaveApplicationMutation,
   useVerifyLeaveApplicationMutation,
   useApproveLeaveApplicationMutation,

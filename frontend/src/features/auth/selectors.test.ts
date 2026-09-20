@@ -33,7 +33,7 @@ describe("selectPermissions", () => {
   });
 
   it("derives HOD-family permissions (can create + recommend + view all)", () => {
-    for (const role of ["HEAD_OF_DEPARTMENT", "HEAD_OF_SECTION", "HEAD_OF_UNIT"] as const) {
+    for (const role of ["HEAD_OF_DEPARTMENT", "HEAD_OF_SECTION", "DAG"] as const) {
       const perms = selectPermissions(stateWithRole(role));
       expect(perms.canCreateLeaveApplication).toBe(true);
       expect(perms.canRecommend).toBe(true);
@@ -69,6 +69,7 @@ describe("selectPermissions", () => {
       canCreateLeaveApplication: false,
       canRecommend: false,
       canCagReview: false,
+      canAagReview: false,
       canVerify: false,
       canApprove: false,
       canManageLeaveTypes: false,

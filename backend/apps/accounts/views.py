@@ -75,11 +75,11 @@ class UserViewSet(viewsets.ModelViewSet):
     # UserSerializer reads 7 FK *_name fields plus additional_roles, so
     # without this every list page is 1+8N queries.
     queryset = User.objects.filter(deleted_at__isnull=True).select_related(
-        'department', 'division', 'support_division', 'work_station', 'section', 'unit', 'designation',
+        'department', 'division', 'work_station', 'section', 'designation',
     ).prefetch_related('additional_roles')
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_fields = [
-        'role', 'department', 'division', 'support_division', 'section', 'unit',
+        'role', 'department', 'division', 'section',
         'work_station', 'designation', 'is_active',
     ]
     # ?search= matches any of these (DRF SearchFilter), on top of the exact

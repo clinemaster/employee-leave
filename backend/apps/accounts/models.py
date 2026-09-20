@@ -5,28 +5,36 @@ from django.db import models
 class Role(models.TextChoices):
     EMPLOYEE = 'EMPLOYEE', 'Employee'
     HEAD_OF_DEPARTMENT = 'HEAD_OF_DEPARTMENT', 'Head of Department'
-    HEAD_OF_DIVISION = 'HEAD_OF_DIVISION', 'Head of Division'
-    HEAD_OF_SUPPORT_DIVISION = 'HEAD_OF_SUPPORT_DIVISION', 'Head of Support Division'
+    DAG = 'DAG', 'DAG'
     HEAD_OF_SECTION = 'HEAD_OF_SECTION', 'Head of Section'
-    HEAD_OF_UNIT = 'HEAD_OF_UNIT', 'Head of Unit'
     HR_ADMIN = 'HR_ADMIN', 'HR Admin'
     AUTHORIZING_OFFICER = 'AUTHORIZING_OFFICER', 'Authorizing Officer'
     CAG = 'CAG', 'CAG'
-    SYSTEM_ADMIN = 'SYSTEM_ADMIN', 'System Admin'
+    AAG = 'AAG', 'AAG'
+    CHIEF_ACCOUNTANT = 'CHIEF_ACCOUNTANT', 'Chief Accountant'
+    DAHRM = 'DAHRM', 'DAHRM'
+    ADA = 'ADA', 'ADA'
+    CHIEF_EXTERNAL_AUDITOR = 'CHIEF_EXTERNAL_AUDITOR', 'Chief External Auditor'
+    SYSTEM_ADMIN = 'SYSTEM_ADMIN', 'SYSTEM_ADMIN'
 
-# Roles exempt from the "belongs to exactly one of department/division/
-# support_division" rule -- these are organization-wide, not tied to a
-# single org unit.
-ORG_UNIT_EXEMPT_ROLES = {Role.SYSTEM_ADMIN, Role.HR_ADMIN, Role.AUTHORIZING_OFFICER, Role.CAG}
+# Roles exempt from the "belongs to exactly one of department/division"
+# rule -- these are organization-wide, not tied to a single org unit. AAG is
+# deliberately NOT exempt: an AAG user is matched to a specific division
+# (like DAG) to review that division's employees -- see
+# apps.leave.permissions.matched_aag_for.
+ORG_UNIT_EXEMPT_ROLES = {
+    Role.SYSTEM_ADMIN, Role.HR_ADMIN, Role.AUTHORIZING_OFFICER, Role.CAG,
+    Role.CHIEF_ACCOUNTANT, Role.DAHRM, Role.ADA, Role.CHIEF_EXTERNAL_AUDITOR,
+}
 
 # Applicant roles for whom the leave workflow must route through CAG review
-# instead of the normal Head of Department/Division/Support Division stage
-# (see apps.leave.permissions.needs_cag_review). These are leadership roles
-# that sit at or above the normal HOD review layer, so a CAG reviewer stands
-# in for that stage.
+# instead of the normal Head of Department/Division stage (see
+# apps.leave.permissions.needs_cag_review). These are leadership roles that
+# sit at or above the normal HOD review layer, so a CAG reviewer stands in
+# for that stage.
 CAG_APPLICANT_ROLES = {
-    Role.AUTHORIZING_OFFICER, Role.HEAD_OF_DEPARTMENT,
-    Role.HEAD_OF_SUPPORT_DIVISION, Role.HEAD_OF_DIVISION,
+    Role.AUTHORIZING_OFFICER, Role.HEAD_OF_DEPARTMENT, Role.DAG,
+    Role.AAG, Role.CHIEF_ACCOUNTANT, Role.DAHRM, Role.ADA, Role.CHIEF_EXTERNAL_AUDITOR,
 }
 
 
@@ -60,16 +68,8 @@ class User(AbstractUser):
         'organization.Division', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='employees',
     )
-    support_division = models.ForeignKey(
-        'organization.SupportDivision', on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='employees',
-    )
     section = models.ForeignKey(
         'organization.Section', on_delete=models.SET_NULL, null=True, blank=True,
-        related_name='employees',
-    )
-    unit = models.ForeignKey(
-        'organization.Unit', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='employees',
     )
 
@@ -82,7 +82,7 @@ class User(AbstractUser):
     sub_vote = models.CharField(max_length=32, blank=True)
 
     # Supervisor/manager used to route applications to the correct
-    # Head of Department/Section/Unit for review.
+    # Head of Department/Section for review.
     manager = models.ForeignKey(
         'self', on_delete=models.SET_NULL, null=True, blank=True,
         related_name='direct_reports',

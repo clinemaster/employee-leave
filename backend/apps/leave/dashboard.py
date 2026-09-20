@@ -72,8 +72,9 @@ class DashboardStatsView(APIView):
         return _counts(qs, {
             'draft': S.DRAFT,
             'pending': (
-                S.PENDING_HOD_REVIEW, S.HOD_RECOMMENDED, S.PENDING_HR_REVIEW,
-                S.RETURNED_TO_HOD, S.PENDING_AUTHORIZATION,
+                S.PENDING_HOD_REVIEW, S.HOD_RECOMMENDED,
+                S.PENDING_AAG_REVIEW, S.AAG_RECOMMENDED,
+                S.PENDING_HR_REVIEW, S.RETURNED_TO_HOD, S.PENDING_AUTHORIZATION,
             ),
             'approved': (S.APPROVED, S.PDF_GENERATED, S.COMPLETED),
             'denied': S.DENIED,

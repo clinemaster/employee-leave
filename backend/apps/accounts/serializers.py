@@ -6,9 +6,8 @@ from .models import ORG_UNIT_EXEMPT_ROLES, Role, User, UserAdditionalRole
 
 
 def _validate_single_org_unit(attrs, instance=None):
-    """Every employee/head belongs to exactly one of department/division/
-    support_division (roles in ORG_UNIT_EXEMPT_ROLES are organization-wide
-    and exempt)."""
+    """Every employee/head belongs to exactly one of department/division
+    (roles in ORG_UNIT_EXEMPT_ROLES are organization-wide and exempt)."""
     def resolve(field):
         if field in attrs:
             return attrs[field]
@@ -18,11 +17,11 @@ def _validate_single_org_unit(attrs, instance=None):
     if role in ORG_UNIT_EXEMPT_ROLES:
         return
 
-    org_units = [resolve('department'), resolve('division'), resolve('support_division')]
+    org_units = [resolve('department'), resolve('division')]
     set_count = sum(1 for u in org_units if u is not None)
     if set_count != 1:
         raise serializers.ValidationError(
-            'A user must belong to exactly one of department, division or support division.'
+            'A user must belong to exactly one of department or division.'
         )
 
 
@@ -43,7 +42,7 @@ class NaotTokenObtainPairSerializer(TokenObtainPairSerializer):
         # *_name fields plus additional_roles — without this, each one is a
         # separate query on every login.
         user = User.objects.select_related(
-            'department', 'division', 'support_division', 'work_station', 'section', 'unit', 'designation',
+            'department', 'division', 'work_station', 'section', 'designation',
         ).prefetch_related('additional_roles').get(pk=self.user.pk)
         data['user'] = UserSerializer(user).data
         return data
@@ -55,16 +54,14 @@ class UserSerializer(serializers.ModelSerializer):
     additional_roles = serializers.SlugRelatedField(
         slug_field='role', many=True, read_only=True,
     )
-    # department/division/support_division/station/section/unit are exposed
-    # above as FK ids (for forms that need to submit them back) — these
-    # *_name companions are the human-readable names for display, e.g. in
-    # the header or the leave application's read-only Section A.
+    # department/division/station/section are exposed above as FK ids (for
+    # forms that need to submit them back) — these *_name companions are the
+    # human-readable names for display, e.g. in the header or the leave
+    # application's read-only Section A.
     department_name = serializers.CharField(source='department.name', read_only=True, default=None)
     division_name = serializers.CharField(source='division.name', read_only=True, default=None)
-    support_division_name = serializers.CharField(source='support_division.name', read_only=True, default=None)
     work_station_name = serializers.CharField(source='work_station.name', read_only=True, default=None)
     section_name = serializers.CharField(source='section.name', read_only=True, default=None)
-    unit_name = serializers.CharField(source='unit.name', read_only=True, default=None)
     designation_name = serializers.CharField(source='designation.name', read_only=True, default=None)
 
     class Meta:
@@ -74,8 +71,8 @@ class UserSerializer(serializers.ModelSerializer):
             'additional_roles',
             'check_number', 'personnel_file_number', 'designation', 'designation_name',
             'work_station', 'work_station_name', 'department', 'department_name',
-            'division', 'division_name', 'support_division', 'support_division_name',
-            'section', 'section_name', 'unit', 'unit_name', 'manager',
+            'division', 'division_name',
+            'section', 'section_name', 'manager',
             'phone_number', 'date_of_first_appointment', 'is_active',
             'vote_code', 'sub_vote',
             'mfa_enabled',
@@ -102,8 +99,8 @@ class UserWriteSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'password', 'full_name', 'email', 'official_email',
             'role', 'additional_roles', 'check_number', 'personnel_file_number',
-            'designation', 'work_station', 'department', 'division', 'support_division',
-            'section', 'unit', 'manager',
+            'designation', 'work_station', 'department', 'division',
+            'section', 'manager',
             'phone_number', 'date_of_first_appointment', 'is_active',
             'vote_code', 'sub_vote',
         ]

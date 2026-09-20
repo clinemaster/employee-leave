@@ -2,7 +2,9 @@
 
 import { use } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
-import { SectionA, SectionB1ReadOnly } from "@/components/leave/SectionReadOnly";
+import {
+  SectionA, SectionAAGReadOnly, SectionB1ReadOnly, SectionCAGReadOnly,
+} from "@/components/leave/SectionReadOnly";
 import { DownloadPdfButton } from "@/components/leave/DownloadPdfButton";
 import { HrReviewForm } from "@/components/workflow/HrReviewForm";
 import { LeaveBalances } from "@/components/leave/LeaveBalances";
@@ -32,7 +34,13 @@ export default function HrApplicationDetailPage({ params }: { params: Promise<{ 
       ) : (
         <div className="space-y-4">
           <SectionA application={application} />
-          <SectionB1ReadOnly application={application} />
+          {application.requires_cag_review ? (
+            <SectionCAGReadOnly application={application} />
+          ) : application.requires_aag_review ? (
+            <SectionAAGReadOnly application={application} />
+          ) : (
+            <SectionB1ReadOnly application={application} />
+          )}
           {hasTravelPaymentData ? (
             <Card>
               <CardHeader>

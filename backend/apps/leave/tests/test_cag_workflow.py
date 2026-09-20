@@ -1,6 +1,7 @@
 """
 CAG review stage: mandatory for applicants holding AUTHORIZING_OFFICER,
-HEAD_OF_DEPARTMENT, HEAD_OF_SUPPORT_DIVISION or HEAD_OF_DIVISION. Verifies
+HEAD_OF_DEPARTMENT, DAG, AAG, CHIEF_ACCOUNTANT, DAHRM, ADA or
+CHIEF_EXTERNAL_AUDITOR. Verifies
 routing (Employee -> CAG -> HR -> AO, no HOD stage for this track), the
 recommend/reject actions, backend enforcement of the mandatory stage, and
 that the normal HOD track is unaffected.
