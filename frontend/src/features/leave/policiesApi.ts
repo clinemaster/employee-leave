@@ -1,5 +1,5 @@
 import { baseApi } from "@/lib/api/baseApi";
-import type { LeavePolicy, PaginatedResponse } from "@/types";
+import type { LeavePolicy, PaginatedResponse, TravelPaymentSettings } from "@/types";
 
 // GET|POST /api/leave-policies/, GET|PUT|PATCH|DELETE /api/leave-policies/{id}/
 // SYSTEM_ADMIN only (read and write; 403 for everyone else, including
@@ -46,6 +46,18 @@ export const policiesApi = baseApi.injectEndpoints({
         { type: "LeavePolicies", id: "LIST" },
       ],
     }),
+
+    // Singleton — GET/PUT /api/travel-payment-settings/. Any authenticated
+    // user may read (the employee-facing form needs the caps to warn live);
+    // only SYSTEM_ADMIN (CanManageLeavePolicies) may write.
+    getTravelPaymentSettings: builder.query<TravelPaymentSettings, void>({
+      query: () => "travel-payment-settings/",
+      providesTags: ["TravelPaymentSettings"],
+    }),
+    updateTravelPaymentSettings: builder.mutation<TravelPaymentSettings, Partial<TravelPaymentSettings>>({
+      query: (body) => ({ url: "travel-payment-settings/", method: "PUT", body }),
+      invalidatesTags: ["TravelPaymentSettings"],
+    }),
   }),
 });
 
@@ -55,4 +67,6 @@ export const {
   useCreateLeavePolicyMutation,
   useUpdateLeavePolicyMutation,
   useDeleteLeavePolicyMutation,
+  useGetTravelPaymentSettingsQuery,
+  useUpdateTravelPaymentSettingsMutation,
 } = policiesApi;

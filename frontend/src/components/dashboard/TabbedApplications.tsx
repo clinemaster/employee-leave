@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { ApplicationsTable } from "@/components/tables/ApplicationsTable";
 import { useGetLeaveApplicationsQuery } from "@/features/leave/leaveApi";
 import type { LeaveApplicationListParams } from "@/features/leave/leaveApi";
+import type { LeaveStatus } from "@/types";
 
 interface Tab {
   label: string;
@@ -20,10 +21,14 @@ export function TabbedApplications({
   tabs,
   detailBasePath,
   extraParams,
+  unattendedStatuses,
 }: {
   tabs: Tab[];
   detailBasePath: string;
   extraParams?: Omit<LeaveApplicationListParams, "status" | "page">;
+  // Same amber/green "needs action" vs "already reviewed" color-coding as
+  // the untabbed Review Queue pages — see ApplicationsTable.
+  unattendedStatuses?: LeaveStatus[];
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [page, setPage] = useState(1);
@@ -40,9 +45,14 @@ export function TabbedApplications({
     setPage(1);
   }
 
+  // Reviewer-facing scope: excludes the caller's own submitted applications
+  // — every current caller of this component is a reviewer/processing page
+  // (Recommendations, HR/AO Applications, CAG/AAG queues), never "My
+  // Applications". See apps.leave.views.LeaveApplicationViewSet.get_queryset.
   const { data, isLoading } = useGetLeaveApplicationsQuery({
     status: active.status,
     page,
+    exclude_own: true,
     ...extraParams,
   });
 
@@ -69,6 +79,7 @@ export function TabbedApplications({
           items={data?.results ?? []}
           detailBasePath={detailBasePath}
           pagination={{ page, count: data?.count ?? 0, onPageChange: setPage }}
+          unattendedStatuses={unattendedStatuses}
         />
       )}
     </div>

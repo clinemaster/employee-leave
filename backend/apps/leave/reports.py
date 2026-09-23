@@ -3,9 +3,11 @@ Reporting / export endpoints (spec section 35): leave applications filtered
 by date/department/work station/leave-type/status, exportable as CSV, Excel or
 PDF.
 
-Restricted to roles with organization-wide visibility (HR_ADMIN,
-AUTHORIZING_OFFICER, SYSTEM_ADMIN) — the same set that already sees the
-org-wide leave-applications list (see `permissions.visible_queryset_for`).
+Restricted to roles granted the VIEW_REPORTS permission (by default
+HR_ADMIN, AUTHORIZING_OFFICER, SYSTEM_ADMIN — see
+accounts.migrations.0011_add_role_permissions and the SYSTEM_ADMIN-only
+Roles page) — by default the same set that already sees the org-wide
+leave-applications list (see `permissions.visible_queryset_for`).
 """
 import csv
 
@@ -20,8 +22,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from .models import LeaveApplication
-from .permissions import IsAuthenticatedAndRole
-from apps.accounts.models import Role
+from .permissions import CanViewReports
 
 REPORT_COLUMNS = [
     ('application_number', 'Application Number'),
@@ -41,8 +42,8 @@ REPORT_COLUMNS = [
 ]
 
 
-class IsReportingRole(IsAuthenticatedAndRole):
-    allowed_roles = (Role.HR_ADMIN, Role.AUTHORIZING_OFFICER, Role.SYSTEM_ADMIN)
+class IsReportingRole(CanViewReports):
+    pass
 
 
 def _filtered_queryset(params):

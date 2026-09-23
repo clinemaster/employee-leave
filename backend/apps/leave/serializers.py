@@ -6,7 +6,7 @@ from .entitlement import compute_entitlement
 from .models import (
     LeaveAAGReview, LeaveApplication, LeaveApproval, LeaveBalance, LeaveCAGReview,
     LeaveDependant, LeaveHRReview, LeavePolicy, LeaveRecommendation, LeaveType,
-    MizigoItem, PersonType, TaxiExpense, TravelRoute, TravelRoutePassenger,
+    MizigoItem, PersonType, TaxiExpense, TravelPaymentSettings, TravelRoute, TravelRoutePassenger,
 )
 from .workingdays import calculate_working_days
 
@@ -21,6 +21,13 @@ class PersonTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = PersonType
         fields = ['id', 'name', 'code', 'is_active', 'sort_order']
+
+
+class TravelPaymentSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TravelPaymentSettings
+        fields = ['taxi_amount', 'mizigo_amount', 'updated_at']
+        read_only_fields = ['updated_at']
 
 
 class LeaveDependantSerializer(serializers.ModelSerializer):
@@ -161,6 +168,9 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
     # Derived from the employee's division (see LeaveApplication.requires_aag_review)
     # — tells the frontend whether to show the AAG stage in the stepper.
     requires_aag_review = serializers.BooleanField(read_only=True)
+    # Derived from the employee's org assignment (see LeaveApplication.requires_cea_review)
+    # — tells the frontend whether to show the CEA stage (instead of HOD) in the stepper.
+    requires_cea_review = serializers.BooleanField(read_only=True)
 
     # Travel payment request (JEDWALI 1)
     travel_routes = TravelRouteSerializer(many=True, read_only=True)
@@ -175,7 +185,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
         model = LeaveApplication
         fields = [
             'id', 'application_number', 'status', 'current_location', 'current_status_label',
-            'requires_cag_review', 'requires_aag_review',
+            'requires_cag_review', 'requires_aag_review', 'requires_cea_review',
             'employee', 'employee_name',
             'vote_code', 'sub_vote', 'check_number', 'personnel_file', 'full_name',
             'designation', 'station', 'division_department', 'phone_number', 'email',
@@ -188,7 +198,7 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id', 'application_number', 'status', 'current_location', 'current_status_label',
-            'requires_cag_review', 'requires_aag_review',
+            'requires_cag_review', 'requires_aag_review', 'requires_cea_review',
             'employee', 'total_working_days', 'submitted_at', 'created_at', 'updated_at',
         ]
 
@@ -218,14 +228,15 @@ class LeaveApplicationSerializer(serializers.ModelSerializer):
 class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
     """
     Section A write serializer, used by employees creating/editing DRAFT (or
-    RETURNED_TO_EMPLOYEE) applications. Dependants are nested and fully
-    replaced on each write. Role/section/status enforcement happens in the
-    view (permissions.assert_can_edit_fields) before this is called.
+    RETURNED_TO_EMPLOYEE) applications. Dependants/travel_routes are nested
+    and fully replaced on each write. TAXI/MIZIGO are NOT client-writable --
+    they're a SYSTEM_ADMIN-configured fixed amount auto-applied whenever
+    travel_assistance is requested (see _sync_travel_payment_fixed_amounts),
+    not itemized/employee-entered. Role/section/status enforcement happens
+    in the view (permissions.assert_can_edit_fields) before this is called.
     """
     dependants = LeaveDependantSerializer(many=True, required=False)
     travel_routes = TravelRouteSerializer(many=True, required=False)
-    taxi_expenses = TaxiExpenseSerializer(many=True, required=False)
-    mizigo_items = MizigoItemSerializer(many=True, required=False)
 
     class Meta:
         model = LeaveApplication
@@ -234,7 +245,7 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
             'full_name', 'designation', 'station', 'division_department',
             'phone_number', 'email', 'contact_address', 'leave_type',
             'leave_number', 'travel_assistance', 'start_date', 'last_date',
-            'dependants', 'travel_routes', 'taxi_expenses', 'mizigo_items',
+            'dependants', 'travel_routes',
         ]
         read_only_fields = ['id']
 
@@ -248,23 +259,18 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         dependants_data = validated_data.pop('dependants', [])
         travel_routes_data = validated_data.pop('travel_routes', [])
-        taxi_expenses_data = validated_data.pop('taxi_expenses', [])
-        mizigo_items_data = validated_data.pop('mizigo_items', [])
         validated_data['employee'] = self.context['request'].user
         application = LeaveApplication.objects.create(**validated_data)
         self._sync_working_days(application)
         for dep in dependants_data:
             LeaveDependant.objects.create(application=application, **dep)
         self._sync_travel_routes(application, travel_routes_data)
-        self._sync_taxi_expenses(application, taxi_expenses_data)
-        self._sync_mizigo_items(application, mizigo_items_data)
+        self._sync_travel_payment_fixed_amounts(application)
         return application
 
     def update(self, instance, validated_data):
         dependants_data = validated_data.pop('dependants', None)
         travel_routes_data = validated_data.pop('travel_routes', None)
-        taxi_expenses_data = validated_data.pop('taxi_expenses', None)
-        mizigo_items_data = validated_data.pop('mizigo_items', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         self._sync_working_days(instance, save=False)
@@ -275,10 +281,7 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
                 LeaveDependant.objects.create(application=instance, **dep)
         if travel_routes_data is not None:
             self._sync_travel_routes(instance, travel_routes_data)
-        if taxi_expenses_data is not None:
-            self._sync_taxi_expenses(instance, taxi_expenses_data)
-        if mizigo_items_data is not None:
-            self._sync_mizigo_items(instance, mizigo_items_data)
+        self._sync_travel_payment_fixed_amounts(instance)
         return instance
 
     @staticmethod
@@ -293,16 +296,33 @@ class LeaveApplicationWriteSerializer(serializers.ModelSerializer):
                 TravelRoutePassenger.objects.create(route=route, **passenger_data)
 
     @staticmethod
-    def _sync_taxi_expenses(application, taxi_data):
+    def _sync_travel_payment_fixed_amounts(application):
+        """
+        TAXI/MIZIGO are not itemized/employee-entered -- when travel
+        assistance is requested, set exactly one TaxiExpense/MizigoItem row
+        each from the SYSTEM_ADMIN-configured fixed amount (see
+        apps.leave.models.TravelPaymentSettings); a category left
+        unconfigured (null) gets no row (contributes 0).
+        Otherwise (no travel assistance requested) clear both -- always
+        re-run on every save so a later admin change to the configured
+        amount, or the applicant toggling travel_assistance off, is
+        reflected the next time the DRAFT is saved.
+        """
         application.taxi_expenses.all().delete()
-        for expense_data in taxi_data:
-            TaxiExpense.objects.create(application=application, **expense_data)
-
-    @staticmethod
-    def _sync_mizigo_items(application, mizigo_data):
         application.mizigo_items.all().delete()
-        for item_data in mizigo_data:
-            MizigoItem.objects.create(application=application, **item_data)
+        if not application.travel_assistance:
+            return
+        settings = TravelPaymentSettings.get_solo()
+        if settings.taxi_amount is not None:
+            TaxiExpense.objects.create(
+                application=application, description='Taxi (fixed rate)',
+                number_of_trips=1, cost_per_trip=settings.taxi_amount,
+            )
+        if settings.mizigo_amount is not None:
+            MizigoItem.objects.create(
+                application=application, description='Mizigo (fixed rate)',
+                quantity=1, unit_cost=settings.mizigo_amount,
+            )
 
     @staticmethod
     def _sync_working_days(application, save=True):

@@ -5,7 +5,8 @@ from .dashboard import DashboardStatsView
 from .reports import LeaveApplicationReportView
 from .views import (
     LeaveApplicationViewSet, LeaveBalanceViewSet,
-    LeavePolicyViewSet, LeaveTypeViewSet, PersonTypeViewSet, WorkingDaysPreviewView,
+    LeavePolicyViewSet, LeaveTypeViewSet, PersonTypeViewSet, TravelPaymentSettingsView,
+    WorkingDaysPreviewView,
 )
 
 router = DefaultRouter()
@@ -17,6 +18,7 @@ router.register('leave-policies', LeavePolicyViewSet, basename='leavepolicy')
 
 urlpatterns = [
     path('working-days-preview/', WorkingDaysPreviewView.as_view(), name='working-days-preview'),
+    path('travel-payment-settings/', TravelPaymentSettingsView.as_view(), name='travel-payment-settings'),
     path('dashboard-stats/', DashboardStatsView.as_view(), name='dashboard-stats'),
     path('reports/leave-applications/', LeaveApplicationReportView.as_view(), name='report-leave-applications'),
     path('', include(router.urls)),

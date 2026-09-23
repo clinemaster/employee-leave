@@ -30,6 +30,12 @@ export interface WorkStation {
   name: string;
   code: string;
   address?: string;
+  // The work station's parent Division, where that relationship exists —
+  // used to resolve the AAG for a CHIEF_EXTERNAL_AUDITOR's own leave via
+  // the existing Division-to-AAG mapping (see backend
+  // apps.leave.permissions.matched_aag_for). Optional.
+  division?: number | null;
+  division_name?: string | null;
   is_active: boolean;
 }
 export interface Designation {

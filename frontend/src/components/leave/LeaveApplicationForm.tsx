@@ -9,6 +9,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { useAppSelector } from "@/store/hooks";
 import { selectCurrentUser } from "@/features/auth/selectors";
 import { useGetLeaveTypesQuery } from "@/features/leave/catalogApi";
@@ -30,9 +31,11 @@ import { orgUnitName } from "@/types";
 
 // Section A fields, per /API.md. `vote_code`/`sub_vote`/`check_number`/
 // `personnel_file`/`full_name`/`designation`/`station`/`division_department`
-// are shown read-only from the user's profile in Step 1 (still sent to the
-// backend on create, since the serializer accepts them — the user profile
-// is the source of truth, the applicant is not expected to edit them here).
+// are read-only, sourced from the user's profile (shown on the sidebar's
+// "Personal Information" page, not as a wizard step here) and still sent to
+// the backend on create, since the serializer accepts them — the user
+// profile is the source of truth, the applicant is not expected to edit
+// them here.
 const dependantSchema = z.object({
   name: z.string().min(1, "Name is required"),
   relationship: z.string().min(1, "Relationship is required"),
@@ -66,7 +69,6 @@ const formSchema = z
 type FormValues = z.infer<typeof formSchema>;
 
 const STEPS = [
-  "Personal Info",
   "Leave Request",
   "Dependants",
   "Travel Route Payment Request",
@@ -89,6 +91,7 @@ export function LeaveApplicationForm() {
     handleSubmit,
     watch,
     trigger,
+    setValue,
     formState: { errors },
   } = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -115,7 +118,6 @@ export function LeaveApplicationForm() {
 
   async function goNext() {
     const fieldsPerStep: (keyof FormValues)[][] = [
-      [],
       ["leave_type", "start_date", "last_date"],
       [],
       ["travel_routes", "taxi_expenses", "mizigo_items"],
@@ -123,12 +125,22 @@ export function LeaveApplicationForm() {
     ];
     const valid = await trigger(fieldsPerStep[step]);
     if (valid) {
-      if (step === 1 && startDate && lastDate) {
+      if (step === 0 && startDate && lastDate) {
         previewWorkingDays({ start_date: startDate, last_date: lastDate });
       }
       // No travel assistance -> Dependants and Travel Payment Request don't
       // apply, so skip straight from Leave Request to Review & Submit.
-      if (step === 1 && !travelAssistance) {
+      // Clear anything entered on those steps on an earlier pass (e.g. the
+      // employee checked travel assistance, started a route, then unchecked
+      // it) -- otherwise stale/incomplete rows stay in form state, are never
+      // re-validated (their step is now skipped), and can fail the backend's
+      // own field validation at submit time with no visible error since
+      // their step isn't rendered.
+      if (step === 0 && !travelAssistance) {
+        setValue("dependants", []);
+        setValue("travel_routes", []);
+        setValue("taxi_expenses", []);
+        setValue("mizigo_items", []);
         setStep(STEPS.length - 1);
         return;
       }
@@ -138,7 +150,7 @@ export function LeaveApplicationForm() {
 
   function goBack() {
     if (step === STEPS.length - 1 && !travelAssistance) {
-      setStep(1);
+      setStep(0);
       return;
     }
     setStep((s) => Math.max(s - 1, 0));
@@ -162,9 +174,11 @@ export function LeaveApplicationForm() {
       start_date: values.start_date,
       last_date: values.last_date,
       dependants: values.dependants,
+      // TAXI/MIZIGO are not sent -- they're not client-writable, the
+      // backend derives them from the SYSTEM_ADMIN-configured fixed amount
+      // whenever travel_assistance is true (see TravelPaymentStep.tsx and
+      // backend apps.leave.serializers._sync_travel_payment_fixed_amounts).
       travel_routes: values.travel_routes,
-      taxi_expenses: values.taxi_expenses,
-      mizigo_items: values.mizigo_items,
     };
   }
 
@@ -173,8 +187,8 @@ export function LeaveApplicationForm() {
     try {
       await createLeaveApplication(sectionAPayload(values)).unwrap();
       router.push("/employee/applications");
-    } catch {
-      setServerError("Could not save draft. Please try again.");
+    } catch (err) {
+      setServerError(extractErrorMessage(err, "Could not save draft. Please try again."));
     }
   }
 
@@ -184,8 +198,8 @@ export function LeaveApplicationForm() {
       const created = await createLeaveApplication(sectionAPayload(values)).unwrap();
       await submitLeaveApplication({ id: created.id }).unwrap();
       router.push("/employee/applications");
-    } catch {
-      setServerError("Could not submit application. Please try again.");
+    } catch (err) {
+      setServerError(extractErrorMessage(err, "Could not submit application. Please try again."));
     }
   }
 
@@ -211,21 +225,6 @@ export function LeaveApplicationForm() {
 
       <Card>
         {step === 0 && (
-          <div className="space-y-4">
-            <h2 className="text-base font-semibold text-gray-900">Personal Information</h2>
-            <p className="text-xs text-gray-500">Pre-filled from your profile — read only.</p>
-            <div className="grid grid-cols-2 gap-4">
-              <ReadOnlyField label="Full Name" value={user?.full_name} />
-              <ReadOnlyField label="Check Number" value={user?.check_number} />
-              <ReadOnlyField label="Personnel File Number" value={user?.personnel_file_number} />
-              <ReadOnlyField label="Department" value={orgUnitName(user)} />
-              <ReadOnlyField label="Work Station" value={user?.work_station_name} />
-              <ReadOnlyField label="Designation" value={user?.designation_name} />
-            </div>
-          </div>
-        )}
-
-        {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Leave Request</h2>
             <div>
@@ -282,7 +281,7 @@ export function LeaveApplicationForm() {
           </div>
         )}
 
-        {step === 2 && (
+        {step === 1 && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Dependants</h2>
             {fields.length === 0 ? (
@@ -317,7 +316,7 @@ export function LeaveApplicationForm() {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 2 && (
           <TravelPaymentStep
             control={control as unknown as Control<TravelPaymentFormValues>}
             register={register as unknown as UseFormRegister<TravelPaymentFormValues>}
@@ -325,7 +324,7 @@ export function LeaveApplicationForm() {
           />
         )}
 
-        {step === 4 && (
+        {step === 3 && (
           <div className="space-y-4">
             <h2 className="text-base font-semibold text-gray-900">Review &amp; Submit</h2>
             <ReviewRow
@@ -372,15 +371,6 @@ export function LeaveApplicationForm() {
           </div>
         </div>
       </Card>
-    </div>
-  );
-}
-
-function ReadOnlyField({ label, value }: { label: string; value?: string | null }) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      <p className="rounded-md bg-gray-50 px-3 py-2 text-sm text-gray-700">{value || "-"}</p>
     </div>
   );
 }

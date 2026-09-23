@@ -14,11 +14,12 @@ import {
 } from "@/lib/validation/leaveApplication";
 
 // AAG review — mandatory stand-in for Section B1 for Division employees
-// whose role doesn't itself require CAG review (see
-// LeaveApplication.requires_aag_review — CAG takes priority when both would
-// apply). POST .../aag-review/ recommends and auto-routes straight to HR (no
-// HOD stage in this track); POST .../aag-reject/ is terminal and requires a
-// reason.
+// whose role doesn't itself require CAG review, plus CHIEF_EXTERNAL_AUDITOR
+// (matched by work station instead of division, since that role has none —
+// see LeaveApplication.requires_aag_review; CAG takes priority when both
+// would apply). POST .../aag-review/ recommends and auto-routes straight to
+// HR (no HOD stage in this track); POST .../aag-reject/ is terminal and
+// requires a reason.
 export function AagReviewForm({ applicationId }: { applicationId: number }) {
   const router = useRouter();
   const [aagReview, { isLoading: isRecommending }] = useAagReviewLeaveApplicationMutation();

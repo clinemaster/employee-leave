@@ -18,6 +18,12 @@ export interface LeaveApplicationListParams {
   status?: string;
   leave_type?: number;
   employee?: number;
+  // Excludes the caller's own submitted applications from the (already
+  // role-scoped) result set — used by reviewer-facing pages (Review Queue,
+  // Recommendations, HR/AO Applications, CAG/AAG queues) so a reviewer's
+  // own leave request never shows up mixed into their review list. "My
+  // Applications" doesn't send this; it sends `employee=<self>` instead.
+  exclude_own?: boolean;
   page?: number;
   // Best-effort extra filters for the HR search UI. /API.md only documents
   // `status`, `leave_type`, `employee` as guaranteed query params — these

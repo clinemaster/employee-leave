@@ -24,7 +24,7 @@ class UserAdmin(DjangoUserAdmin):
         ('NAOT Employee Details', {
             'fields': (
                 'role', 'full_name', 'check_number', 'personnel_file_number',
-                'designation', 'work_station', 'department', 'division',
+                'place_of_domicile', 'designation', 'work_station', 'department', 'division',
                 'section', 'official_email', 'date_of_first_appointment',
                 'phone_number', 'manager', 'deleted_at',
             )

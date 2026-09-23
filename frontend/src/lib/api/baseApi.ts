@@ -80,6 +80,8 @@ export const baseApi = createApi({
     "AuditTrail",
     "Documents",
     "Me",
+    "RolePermissions",
+    "TravelPaymentSettings",
   ],
   endpoints: () => ({}),
 });

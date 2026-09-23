@@ -45,6 +45,7 @@ function locationStyle(location: string): string {
   if (location.startsWith("HOD")) return "bg-blue-100 text-blue-700";
   if (location.startsWith("CAG")) return "bg-purple-100 text-purple-700";
   if (location.startsWith("AAG")) return "bg-purple-100 text-purple-700";
+  if (location.startsWith("CEA")) return "bg-blue-100 text-blue-700";
   if (location.startsWith("HR")) return "bg-indigo-100 text-indigo-700";
   if (location.startsWith("Authorizing Officer")) return "bg-teal-100 text-teal-700";
   return "bg-gray-100 text-gray-700";

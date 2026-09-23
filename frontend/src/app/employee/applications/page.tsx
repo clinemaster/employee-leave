@@ -9,17 +9,30 @@ import { LeaveBalances } from "@/components/leave/LeaveBalances";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { useGetLeaveApplicationsQuery } from "@/features/leave/leaveApi";
+import { useAppSelector } from "@/store/hooks";
+import { selectCurrentUser } from "@/features/auth/selectors";
+import { allUserRoles } from "@/types";
 
 // Stat cards are now real server aggregates from GET /api/dashboard-stats/
 // (see DashboardStats component / features/dashboard/dashboardApi.ts) —
 // no longer a client-side approximation from the first page of results.
+//
+// "My Applications" — shared across every role (see AppShell's navByRole).
+// Scoped to the caller's own submitted applications only, regardless of
+// whether they also hold a reviewer role (HOD/AAG/CAG/CEA/HR/AO all land
+// here too) — reviewing authority belongs under Review Queue/Recommendations
+// instead. SYSTEM_ADMIN is the sole exception: sees every application in
+// the system, matching their existing org-wide visibility.
 export default function EmployeeApplicationsPage() {
+  const user = useAppSelector(selectCurrentUser);
+  const isSystemAdmin = user ? allUserRoles(user).includes("SYSTEM_ADMIN") : false;
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const { data: applications, isLoading } = useGetLeaveApplicationsQuery({
     page,
     search: search || undefined,
+    employee: isSystemAdmin ? undefined : user?.id,
   });
 
   // Debounce the search box so every keystroke doesn't hit the API, and

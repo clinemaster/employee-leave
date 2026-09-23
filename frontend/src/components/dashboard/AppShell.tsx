@@ -13,64 +13,58 @@ import { RoleGuard } from "@/components/workflow/RoleGuard";
 import { NotificationBell } from "@/components/dashboard/NotificationBell";
 import { allUserRoles } from "@/types";
 
+// Shared by every role, always first, in this exact order — every role can
+// be a leave applicant regardless of any reviewer responsibilities, so
+// these three don't belong to any one role's array below.
+const COMMON_PREFIX: { label: string; href: string }[] = [
+  { label: "Personal Information", href: "/employee/personal-information" },
+  { label: "New Leave Application", href: "/employee/leave/new" },
+  { label: "My Applications", href: "/employee/applications" },
+];
+
 const navByRole: Record<string, { label: string; href: string }[]> = {
-  EMPLOYEE: [
-    { label: "My Applications", href: "/employee/applications" },
-    { label: "New Leave Application", href: "/employee/leave/new" },
-  ],
+  EMPLOYEE: [],
   HEAD_OF_DEPARTMENT: [
     { label: "Review Queue", href: "/hod/review-queue" },
     { label: "Recommendations", href: "/hod/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
   DAG: [
     { label: "Review Queue", href: "/hod/review-queue" },
     { label: "Recommendations", href: "/hod/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
   HEAD_OF_SECTION: [
     { label: "Review Queue", href: "/hod/review-queue" },
     { label: "Recommendations", href: "/hod/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
   HR_ADMIN: [
     { label: "Review Queue", href: "/hr/review-queue" },
     { label: "Applications", href: "/hr/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
   AUTHORIZING_OFFICER: [
     { label: "Review Queue", href: "/authorization/review-queue" },
     { label: "Applications", href: "/authorization/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
   CAG: [
     { label: "CAG Review Queue", href: "/cag/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
   AAG: [
     { label: "AAG Review Queue", href: "/aag/applications" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
-  CHIEF_ACCOUNTANT: [
-    { label: "My Applications", href: "/employee/applications" },
-  ],
-  DAHRM: [
-    { label: "My Applications", href: "/employee/applications" },
-  ],
-  ADA: [
-    { label: "My Applications", href: "/employee/applications" },
-  ],
+  CHIEF_ACCOUNTANT: [],
+  DAHRM: [],
+  ADA: [],
   CHIEF_EXTERNAL_AUDITOR: [
-    { label: "My Applications", href: "/employee/applications" },
+    { label: "Review Queue", href: "/hod/review-queue" },
+    { label: "Recommendations", href: "/hod/applications" },
   ],
   SYSTEM_ADMIN: [
+    { label: "Roles", href: "/admin/roles" },
     { label: "Leave Types", href: "/admin/leave-types" },
     { label: "Leave Policies", href: "/admin/leave-policies" },
     { label: "Person Types", href: "/admin/person-types" },
     { label: "Users", href: "/admin/users" },
     { label: "Organization", href: "/admin/organization" },
     { label: "Reports", href: "/admin/reports" },
-    { label: "My Applications", href: "/employee/applications" },
   ],
 };
 
@@ -86,6 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const user = useAppSelector(selectCurrentUser);
   const navItems = user
     ? [
+        ...COMMON_PREFIX,
         ...dedupeByHref(allUserRoles(user).flatMap((r) => navByRole[r] ?? [])),
         ...(allUserRoles(user).includes("SYSTEM_ADMIN")
           ? [{ label: "Settings", href: "/settings" }]
@@ -124,7 +119,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex flex-1 flex-col">
           <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-3">
             <span className="text-sm text-gray-500">
-              {user ? `${user.full_name} · ${user.role.replaceAll("_", " ")}` : ""}
+              {user ? (
+                <>
+                  Welcome{" "}
+                  <span className="font-medium uppercase text-gray-900">{user.full_name}</span>
+                </>
+              ) : (
+                ""
+              )}
             </span>
             <div className="flex items-center gap-3">
               <NotificationBell />

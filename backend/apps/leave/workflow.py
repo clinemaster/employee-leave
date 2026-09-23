@@ -46,7 +46,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from apps.accounts.models import Role, User
+from apps.accounts.models import Permission, Role, User, role_has_permission
 from apps.audit.models import AuditLog
 from apps.notifications.emails import send_workflow_email
 from apps.notifications.models import Notification
@@ -55,7 +55,17 @@ from .models import ApplicationStatus as S
 from .permissions import (
     effective_reviewer_for, is_aag_reviewer, is_authorizing_officer, is_cag_reviewer,
     is_hr_admin, is_system_admin, matched_aag_for, needs_aag_review, needs_cag_review,
+    routed_hod_for,
 )
+
+
+def _require_permission(user, permission, message):
+    """Raise PermissionDenied unless `user` holds `permission` via one of
+    their roles (see accounts.models.role_has_permission) -- the dynamic,
+    SYSTEM_ADMIN-configurable layer on top of the structural
+    identity/routing checks above/below each call site."""
+    if not role_has_permission(user.all_roles, permission):
+        raise PermissionDenied(message)
 
 # Maps action name -> (from_statuses, to_status). `submit` is special-cased in
 # perform_transition: its target status depends on whether the applicant's
@@ -67,9 +77,10 @@ from .permissions import (
 # same 'route_to_hr' auto-follow-on as the normal HOD 'recommend', and
 # `cag_reject`/`aag_reject` end the workflow the same way `deny` does — see
 # spec: employees holding AUTHORIZING_OFFICER/HEAD_OF_DEPARTMENT/DAG/AAG/
-# CHIEF_ACCOUNTANT/DAHRM/ADA/CHIEF_EXTERNAL_AUDITOR must never be able to
-# reach HR or the Authorizing Officer without a CAG recommendation first, and
-# Division employees (outside that set) must never bypass AAG.
+# CHIEF_ACCOUNTANT/DAHRM/ADA must never be able to reach HR or the
+# Authorizing Officer without a CAG recommendation first, and Division
+# employees plus CHIEF_EXTERNAL_AUDITOR (outside that set) must never bypass
+# AAG.
 TRANSITIONS = {
     'submit': ({S.DRAFT, S.RETURNED_TO_EMPLOYEE}, S.PENDING_HOD_REVIEW),
     'recommend': ({S.PENDING_HOD_REVIEW}, S.HOD_RECOMMENDED),
@@ -108,6 +119,10 @@ def _check_role_for_action(user, application, action):
     if action in ('submit',):
         if application.employee_id != user.id:
             raise PermissionDenied('Only the applicant may submit this application.')
+        _require_permission(
+            user, Permission.CREATE_LEAVE_APPLICATION,
+            'Your role does not have permission to submit leave applications.',
+        )
         if needs_cag_review(application.employee):
             if not _cag_reviewers().exists():
                 # Same "would get stuck with no one able to act" guard as the
@@ -121,41 +136,73 @@ def _check_role_for_action(user, application, action):
             if matched_aag_for(application.employee) is None:
                 # Same guard, for the AAG track: PENDING_AAG_REVIEW only
                 # accepts aag_review/aag_reject, both gated on being the AAG
-                # matched to this employee's specific division.
+                # matched to this employee's specific division (or, for
+                # CHIEF_EXTERNAL_AUDITOR, work station).
+                unit = 'division' if application.employee.division_id is not None else 'work station'
                 raise WorkflowError(
-                    'No AAG reviewer is currently assigned to your division. '
+                    f'No AAG reviewer is currently assigned to your {unit}. '
                     'Ask a SYSTEM_ADMIN to assign one before submitting.'
                 )
-        elif effective_reviewer_for(application) is None:
-            # Without a routed OR fallback reviewer, the application would
-            # move to PENDING_HOD_REVIEW with no one able to act on it
-            # (recommend/return both require one) — stuck forever with no
-            # visible reason why. Reject at submit time instead, with a
-            # message that tells the applicant/admin what to fix.
+        elif routed_hod_for(application) is None:
+            # Every employee belongs to exactly one org unit (department,
+            # division, or work station) and that unit's designated
+            # reviewer (HOD/DAG, or CEA for a work station) must exist
+            # before submission is allowed -- the org-wide HR/AO fallback
+            # (fallback_reviewer_for) is deliberately NOT accepted here, so
+            # a missing organizational reviewer is never silently papered
+            # over. Reject at submit time with a message that tells the
+            # applicant/admin what to fix.
+            employee = application.employee
+            if employee.department_id is not None:
+                unit = 'Department'
+            elif employee.work_station_id is not None:
+                unit = 'Workstation'
+            else:
+                unit = 'organizational unit'
             raise WorkflowError(
-                'You have no assigned Head of Department/Division/Section to review this '
-                'application, and no HR Admin or Authorizing Officer is available as a '
-                'fallback. Ask a SYSTEM_ADMIN to assign a reviewer before submitting.'
+                f'Your leave application cannot be submitted because the required organizational '
+                f'reviewer for your {unit} has not yet been assigned. Please contact the system '
+                'administrator or HR.'
             )
     elif action in ('recommend', 'return_to_employee'):
         reviewer = effective_reviewer_for(application)
         if reviewer is None or reviewer.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
+        _require_permission(
+            user, Permission.RECOMMEND_LEAVE,
+            'Your role does not have permission to recommend leave applications.',
+        )
     elif action in ('cag_review', 'cag_reject'):
         if not is_cag_reviewer(user):
             raise PermissionDenied('Only a CAG reviewer may act here.')
+        _require_permission(
+            user, Permission.CAG_REVIEW_LEAVE,
+            'Your role does not have permission to perform CAG review.',
+        )
     elif action in ('aag_review', 'aag_reject'):
         if not is_aag_reviewer(user):
             raise PermissionDenied('Only an AAG reviewer may act here.')
         matched = matched_aag_for(application.employee)
         if matched is None or matched.id != user.id:
             raise PermissionDenied('This application is not routed to you.')
+        _require_permission(
+            user, Permission.AAG_REVIEW_LEAVE,
+            'Your role does not have permission to perform AAG review.',
+        )
     elif action in ('verify', 'return_to_hod'):
         if not is_hr_admin(user):
             raise PermissionDenied('Only HR Admin may act here.')
+        _require_permission(
+            user, Permission.VERIFY_LEAVE,
+            'Your role does not have permission to verify leave applications.',
+        )
     elif action in ('approve', 'deny'):
         if not is_authorizing_officer(user):
             raise PermissionDenied('Only the Authorizing Officer may act here.')
+        _require_permission(
+            user, Permission.APPROVE_LEAVE,
+            'Your role does not have permission to approve/deny leave applications.',
+        )
     elif action in ('generate_pdf',):
         if not (is_hr_admin(user) or is_authorizing_officer(user) or application.employee_id == user.id):
             raise PermissionDenied('You are not authorized to generate this document.')

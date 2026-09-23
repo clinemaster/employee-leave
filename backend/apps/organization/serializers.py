@@ -22,9 +22,11 @@ class SectionSerializer(serializers.ModelSerializer):
 
 
 class WorkStationSerializer(serializers.ModelSerializer):
+    division_name = serializers.CharField(source='division.name', read_only=True, default=None)
+
     class Meta:
         model = WorkStation
-        fields = ['id', 'name', 'code', 'address', 'is_active']
+        fields = ['id', 'name', 'code', 'address', 'division', 'division_name', 'is_active']
 
 
 class DesignationSerializer(serializers.ModelSerializer):

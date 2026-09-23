@@ -15,8 +15,8 @@ import {
 
 // CAG review — mandatory stand-in for Section B1 for applicants whose role
 // requires it (AUTHORIZING_OFFICER, HEAD_OF_DEPARTMENT, DAG, AAG,
-// CHIEF_ACCOUNTANT, DAHRM, ADA, CHIEF_EXTERNAL_AUDITOR — see
-// LeaveApplication.requires_cag_review). POST .../cag-review/ recommends and
+// CHIEF_ACCOUNTANT, DAHRM, ADA — see LeaveApplication.requires_cag_review).
+// POST .../cag-review/ recommends and
 // auto-routes straight to HR (no HOD stage in this track); POST
 // .../cag-reject/ is terminal and requires a reason.
 export function CagReviewForm({ applicationId }: { applicationId: number }) {

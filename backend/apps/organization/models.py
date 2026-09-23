@@ -62,6 +62,16 @@ class WorkStation(TimeStampedSoftDeleteModel):
     name = models.CharField(max_length=255, unique=True)
     code = models.CharField(max_length=32, unique=True)
     address = models.CharField(max_length=255, blank=True)
+    # A work station's parent Division, where that relationship exists (e.g.
+    # a regional office belonging to the External Audit Division). Used to
+    # resolve the AAG for a CHIEF_EXTERNAL_AUDITOR's own leave application
+    # via the existing Division-to-AAG mapping, instead of a separate
+    # CEA-to-AAG or Workstation-to-AAG link -- see
+    # apps.leave.permissions.matched_aag_for. Optional: not every work
+    # station has a configured parent Division yet.
+    division = models.ForeignKey(
+        Division, on_delete=models.SET_NULL, null=True, blank=True, related_name='work_stations',
+    )
 
     class Meta:
         ordering = ['name']

@@ -328,11 +328,15 @@ resolved in this order (`apps.leave.permissions`):
 2. **Legacy `manager`** — if no matched head exists, the employee's
    manually-assigned `manager` FK (still used for Section-level HOD
    routing, which isn't derived automatically).
-3. **Fallback** (`fallback_reviewer_for`) — if neither of the above exists
-   (a vacant post with no manager set either), routes to an active
-   `HR_ADMIN`, then an active `AUTHORIZING_OFFICER`, rather than leaving the
-   application permanently stuck. `/submit/` itself is rejected with `400`
-   only if *no* reviewer can be found at all (not even a fallback).
+3. **CEA "head of work station"** (`matched_cea_for`) — if neither of the
+   above exists (department/division has no active head, and no `manager`
+   is set), the active `CHIEF_EXTERNAL_AUDITOR` sharing the employee's
+   `work_station`. Department/division heads always take priority over this.
+4. **Fallback** (`fallback_reviewer_for`) — if none of the above exists,
+   routes to an active `HR_ADMIN`, then an active `AUTHORIZING_OFFICER`,
+   rather than leaving the application permanently stuck. `/submit/` itself
+   is rejected with `400` only if *no* reviewer can be found at all (not
+   even a fallback).
 
 ### GET /api/leave-applications/
 List, filtered to the above. Query params: `?status=&leave_type=&employee=`.
@@ -517,10 +521,12 @@ follows. CAG takes priority: an applicant whose role is itself a
 CAG, even if they also belong to a Division. Otherwise, an applicant who
 belongs to a Division routes through AAG — matched to the AAG assigned to
 that specific division (`apps.leave.permissions.matched_aag_for`), the same
-way a Head of Department is matched by `department`. Both tracks skip the
-normal HOD stage entirely (no `recommendation`/Section B1 in that case —
-`cag_review`/`aag_review` carries the equivalent decision instead) and
-auto-route straight to HR on a recommendation.
+way a Head of Department is matched by `department`. `CHIEF_EXTERNAL_AUDITOR`
+also routes through AAG, but — having no division (it's org-unit exempt) —
+is matched by `work_station` instead. Both tracks skip the normal HOD stage
+entirely (no `recommendation`/Section B1 in that case — `cag_review`/
+`aag_review` carries the equivalent decision instead) and auto-route
+straight to HR on a recommendation.
 
 ## Deferred to a later phase (do not assume these exist)
 

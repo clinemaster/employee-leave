@@ -380,11 +380,14 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
   paginated applications table + leave balances (`LeaveBalances`);
   `/employee/applications/[id]` — full read-only A/B1/B2/C view + "Download PDF", enabled only once
   status is `APPROVED`/`PDF_GENERATED` (matches the backend's allowed-status gate).
-- **HOD** (`HEAD_OF_DEPARTMENT`/`DAG`/`HEAD_OF_SECTION`): `/hod/applications` — tabs
+- **HOD** (`HEAD_OF_DEPARTMENT`/`DAG`/`HEAD_OF_SECTION`/`CHIEF_EXTERNAL_AUDITOR`): `/hod/applications` — tabs
   (Pending Recommendation=`PENDING_HOD_REVIEW` / Recommended=`HOD_RECOMMENDED` /
   Returned=`RETURNED_TO_EMPLOYEE` / Completed=`APPROVED`); `/hod/applications/[id]` — Section A
   read-only + `HodRecommendationForm` (recommend/do-not-recommend, comments required unless
   recommending, signature name/designation) with Recommend and Return actions.
+  `CHIEF_EXTERNAL_AUDITOR` acts as "head of work station" here — a fallback reviewer (after
+  department/division heads and legacy `manager` routing) for employees at their work station
+  whose department/division has no active head (see backend `matched_cea_for`).
 - **HR** (`HR_ADMIN`): `/hr/applications` — tabs (Pending Verification=`PENDING_HR_REVIEW` /
   Verified=`HR_VERIFIED` / Returned=`RETURNED_TO_HOD` / Completed=`APPROVED`) + a search input (not
   yet wired to a query param — see Deferred); `/hr/applications/[id]` — A+B1 read-only +
@@ -399,7 +402,8 @@ Actions: Save Draft (`createLeaveApplication`, application stays `DRAFT`), Back/
 - **AAG**: `/aag/applications` — same tab/page shape as CAG (`PENDING_AAG_REVIEW`/
   `AAG_RECOMMENDED`/`DENIED`), `AagReviewForm` — mandatory stand-in for Section B1 for Division
   employees whose role doesn't itself require CAG review (`requires_aag_review`), matched to the
-  AAG assigned to that specific division (CAG takes priority when both would apply).
+  AAG assigned to that specific division (CAG takes priority when both would apply). Also stands
+  in for `CHIEF_EXTERNAL_AUDITOR`, matched by `work_station` instead (that role has no division).
 - **Authorizing Officer**: `/authorization/applications` — tabs (Pending Decision=
   `PENDING_AUTHORIZATION` / Approved / Denied); `/authorization/applications/[id]` — A+B1+B2
   read-only + `ApprovalForm` (Approve with optional comments, or Deny with a required reason,

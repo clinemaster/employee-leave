@@ -14,25 +14,32 @@ import {
   useGetWorkStationsQuery,
 } from "@/features/departments/orgApi";
 import { extractErrorMessage } from "@/lib/api/errors";
-import type { Role, User } from "@/types";
+import { REGIONS } from "@/types";
+import type { Region, Role, User } from "@/types";
+import { useGetRolePermissionsQuery } from "@/features/accounts/rolePermissionsApi";
 
 const PAGE_SIZE = 25;
 
-// Roles exempt from the "belongs to exactly one org unit" rule (mirrors
-// apps.accounts.models.ORG_UNIT_EXEMPT_ROLES on the backend) — organization-
-// wide roles that aren't tied to a single department/division. AAG is
-// deliberately NOT exempt: an AAG user is matched to a specific division
-// (like DAG) to review that division's employees.
-const ORG_UNIT_EXEMPT_ROLES: Role[] = [
-  "SYSTEM_ADMIN", "HR_ADMIN", "AUTHORIZING_OFFICER", "CAG",
-  "CHIEF_ACCOUNTANT", "DAHRM", "ADA", "CHIEF_EXTERNAL_AUDITOR",
+// The only roles that require exactly one of department/division/work
+// station (mirrors the backend's actual rule —
+// apps.accounts.serializers._validate_single_org_unit — every OTHER role,
+// including any SYSTEM_ADMIN-created custom role, is exempt/org-wide).
+const ORG_UNIT_REQUIRED_ROLES = [
+  "EMPLOYEE",
+  "HEAD_OF_DEPARTMENT",
+  "DAG",
+  "HEAD_OF_SECTION",
+  "AAG",
+  "CHIEF_EXTERNAL_AUDITOR",
 ];
 
-type OrgUnitType = "department" | "division";
+type OrgUnitType = "department" | "division" | "work_station";
 
-// Also doubles as the priority order used to pick the base `role` out of a
-// set of checked roles (see splitRoles) — earlier wins.
-const roles: Role[] = [
+// Built-in role priority order used to pick the base `role` out of a set of
+// checked roles (see splitRoles) — earlier wins. A custom role is never
+// preferred over a built-in one, but becomes the base if it's the only role
+// checked.
+const BUILT_IN_ROLE_PRIORITY = [
   "EMPLOYEE",
   "HEAD_OF_DEPARTMENT",
   "DAG",
@@ -52,12 +59,12 @@ const roles: Role[] = [
 // on the backend, but the UI presents them as a single checked set — this is
 // the only place that splits/recombines them, so there's exactly one role
 // assignment action instead of two separate pickers.
-function splitRoles(selected: Role[]): { role: Role; additional_roles: Role[] } {
-  const base = roles.find((r) => selected.includes(r)) ?? "EMPLOYEE";
+function splitRoles(selected: string[]): { role: string; additional_roles: string[] } {
+  const base = BUILT_IN_ROLE_PRIORITY.find((r) => selected.includes(r)) ?? selected[0] ?? "EMPLOYEE";
   return { role: base, additional_roles: selected.filter((r) => r !== base) };
 }
 
-function combinedRoles(role: Role, additionalRoles: Role[]): Role[] {
+function combinedRoles(role: string, additionalRoles: string[]): string[] {
   return [role, ...additionalRoles.filter((r) => r !== role)];
 }
 
@@ -68,6 +75,12 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const { data, isLoading } = useGetUsersQuery({ page, search: search || undefined });
+  // All assignable roles (built-in + any SYSTEM_ADMIN-created custom ones),
+  // for the "Roles" checkbox popover below — see RolesCell.
+  const { data: roleData } = useGetRolePermissionsQuery();
+  const assignableRoles = roleData
+    ? [...roleData.roles].sort((a, b) => a.display_name.localeCompare(b.display_name))
+    : [];
 
   // Debounce the search box so every keystroke doesn't hit the API, and
   // reset back to page 1 whenever the effective search term changes.
@@ -88,6 +101,7 @@ export default function AdminUsersPage() {
   const [password, setPassword] = useState("");
   const [voteCode, setVoteCode] = useState("");
   const [subVote, setSubVote] = useState("");
+  const [placeOfDomicile, setPlaceOfDomicile] = useState<Region | "">("");
   const [createError, setCreateError] = useState<string | null>(null);
 
   const [orgUnitType, setOrgUnitType] = useState<OrgUnitType>("department");
@@ -95,13 +109,15 @@ export default function AdminUsersPage() {
 
   const { data: departments } = useGetDepartmentsQuery();
   const { data: divisions } = useGetDivisionsQuery();
+  const { data: workStations } = useGetWorkStationsQuery();
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   // New users are always created as EMPLOYEE; other roles are assigned
   // afterward via the "Roles" column/popover in the table below.
-  const needsOrgUnit = !ORG_UNIT_EXEMPT_ROLES.includes("EMPLOYEE");
-  const orgUnitOptions = orgUnitType === "department" ? departments : divisions;
+  const needsOrgUnit = ORG_UNIT_REQUIRED_ROLES.includes("EMPLOYEE");
+  const orgUnitOptions =
+    orgUnitType === "department" ? departments : orgUnitType === "division" ? divisions : workStations;
 
   async function handleCreate() {
     if (!username.trim() || !fullName.trim() || !checkNumber.trim()) return;
@@ -117,6 +133,7 @@ export default function AdminUsersPage() {
         password: password || undefined,
         vote_code: voteCode,
         sub_vote: subVote,
+        place_of_domicile: placeOfDomicile || undefined,
         ...(needsOrgUnit ? { [orgUnitType]: Number(orgUnitId) } : {}),
       }).unwrap();
       setUsername("");
@@ -124,6 +141,7 @@ export default function AdminUsersPage() {
       setCheckNumber("");
       setEmail("");
       setPassword("");
+      setPlaceOfDomicile("");
       setVoteCode("");
       setSubVote("");
       setOrgUnitType("department");
@@ -170,6 +188,22 @@ export default function AdminUsersPage() {
             <Label htmlFor="subVote">Sub-vote</Label>
             <Input id="subVote" value={subVote} onChange={(e) => setSubVote(e.target.value)} />
           </div>
+          <div>
+            <Label htmlFor="placeOfDomicile">Place of Domicile</Label>
+            <select
+              id="placeOfDomicile"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              value={placeOfDomicile}
+              onChange={(e) => setPlaceOfDomicile(e.target.value as Region | "")}
+            >
+              <option value="">Select region...</option>
+              {REGIONS.map((r) => (
+                <option key={r.code} value={r.code}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
           {needsOrgUnit ? (
             <>
               <div>
@@ -185,11 +219,12 @@ export default function AdminUsersPage() {
                 >
                   <option value="department">Department</option>
                   <option value="division">Division</option>
+                  <option value="work_station">Workstation</option>
                 </select>
               </div>
               <div>
                 <Label htmlFor="orgUnit">
-                  {orgUnitType === "department" ? "Department" : "Division"}
+                  {orgUnitType === "department" ? "Department" : orgUnitType === "division" ? "Division" : "Workstation"}
                 </Label>
                 <select
                   id="orgUnit"
@@ -258,7 +293,10 @@ export default function AdminUsersPage() {
                     <td className="py-2 pr-4">
                       <RolesCell
                         user={u}
-                        onChange={(role, additional_roles) => updateUser({ id: u.id, role, additional_roles })}
+                        assignableRoles={assignableRoles}
+                        onChange={(role, additional_roles) =>
+                          updateUser({ id: u.id, role: role as Role, additional_roles: additional_roles as Role[] })
+                        }
                       />
                     </td>
                     <td className="py-2 pr-4">{u.is_active ? "Yes" : "No"}</td>
@@ -317,31 +355,36 @@ export default function AdminUsersPage() {
 
 function RolesCell({
   user,
+  assignableRoles,
   onChange,
 }: {
   user: User;
-  onChange: (role: Role, additionalRoles: Role[]) => void;
+  assignableRoles: { code: string; display_name: string }[];
+  onChange: (role: string, additionalRoles: string[]) => void;
 }) {
   const current = combinedRoles(user.role, user.additional_roles ?? []);
+  const labelFor = (code: string) =>
+    assignableRoles.find((r) => r.code === code)?.display_name ?? code.replaceAll("_", " ");
 
   return (
     <details className="relative">
       <summary className="cursor-pointer text-gray-700">
-        {current.map((r) => r.replaceAll("_", " ")).join(", ")}
+        {current.map((r) => labelFor(r)).join(", ")}
       </summary>
-      <div className="absolute z-10 mt-1 flex w-56 flex-col gap-1 rounded-md border border-gray-200 bg-white p-2 shadow-md">
-        {roles.map((r) => (
-          <label key={r} className="flex items-center gap-1.5 text-sm text-gray-700">
+      <div className="absolute z-10 mt-1 flex w-80 max-h-96 flex-col gap-2.5 overflow-y-auto rounded-md border border-gray-200 bg-white p-4 shadow-lg">
+        {assignableRoles.map((r) => (
+          <label key={r.code} className="flex items-center gap-2 text-sm text-gray-700">
             <input
               type="checkbox"
-              checked={current.includes(r)}
+              className="h-4 w-4"
+              checked={current.includes(r.code)}
               onChange={(e) => {
-                const next = e.target.checked ? [...current, r] : current.filter((x) => x !== r);
+                const next = e.target.checked ? [...current, r.code] : current.filter((x) => x !== r.code);
                 const { role, additional_roles } = splitRoles(next);
                 onChange(role, additional_roles);
               }}
             />
-            {r.replaceAll("_", " ")}
+            {r.display_name}
           </label>
         ))}
       </div>
@@ -351,6 +394,7 @@ function RolesCell({
 
 function initialOrgUnitType(user: User): OrgUnitType {
   if (user.division) return "division";
+  if (!user.department && user.work_station) return "work_station";
   return "department";
 }
 
@@ -369,16 +413,23 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
   const [phoneNumber, setPhoneNumber] = useState(user.phone_number ?? "");
   const [voteCode, setVoteCode] = useState(user.vote_code ?? "");
   const [subVote, setSubVote] = useState(user.sub_vote ?? "");
+  const [placeOfDomicile, setPlaceOfDomicile] = useState<Region | "">(user.place_of_domicile ?? "");
   const [designation, setDesignation] = useState(user.designation != null ? String(user.designation) : "");
+  // Roles exempt from ORG_UNIT_REQUIRED_ROLES (HR_ADMIN, CAG, etc.) still use
+  // work_station as a plain duty-station field for travel-request autofill
+  // (see TravelPaymentStep) — independent of the mutually-exclusive
+  // department/division/work_station "Belongs to" selector below, which only
+  // applies to roles that require exactly one of the three.
   const [workStation, setWorkStation] = useState(user.work_station != null ? String(user.work_station) : "");
   const [orgUnitType, setOrgUnitType] = useState<OrgUnitType>(initialOrgUnitType(user));
   const [orgUnitId, setOrgUnitId] = useState(
-    String(user.department ?? user.division ?? "")
+    String(user.department ?? user.division ?? user.work_station ?? "")
   );
   const [error, setError] = useState<string | null>(null);
 
-  const needsOrgUnit = !ORG_UNIT_EXEMPT_ROLES.includes(user.role);
-  const orgUnitOptions = orgUnitType === "department" ? departments : divisions;
+  const needsOrgUnit = ORG_UNIT_REQUIRED_ROLES.includes(user.role);
+  const orgUnitOptions =
+    orgUnitType === "department" ? departments : orgUnitType === "division" ? divisions : workStations;
 
   async function handleSave() {
     if (!username.trim() || !fullName.trim() || !checkNumber.trim()) return;
@@ -395,8 +446,9 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
         phone_number: phoneNumber,
         vote_code: voteCode,
         sub_vote: subVote,
+        place_of_domicile: placeOfDomicile,
         designation: designation ? Number(designation) : null,
-        work_station: workStation ? Number(workStation) : null,
+        work_station: needsOrgUnit ? null : workStation ? Number(workStation) : null,
         department: null,
         division: null,
         ...(needsOrgUnit ? { [orgUnitType]: Number(orgUnitId) } : {}),
@@ -447,6 +499,22 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
           <Input id="edit-subVote" value={subVote} onChange={(e) => setSubVote(e.target.value)} />
         </div>
         <div>
+          <Label htmlFor="edit-placeOfDomicile">Place of Domicile</Label>
+          <select
+            id="edit-placeOfDomicile"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            value={placeOfDomicile}
+            onChange={(e) => setPlaceOfDomicile(e.target.value as Region | "")}
+          >
+            <option value="">Select region...</option>
+            {REGIONS.map((r) => (
+              <option key={r.code} value={r.code}>
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <Label htmlFor="edit-designation">Designation</Label>
           <select
             id="edit-designation"
@@ -462,22 +530,24 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
             ))}
           </select>
         </div>
-        <div>
-          <Label htmlFor="edit-workStation">Work station</Label>
-          <select
-            id="edit-workStation"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            value={workStation}
-            onChange={(e) => setWorkStation(e.target.value)}
-          >
-            <option value="">None</option>
-            {workStations?.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {!needsOrgUnit ? (
+          <div>
+            <Label htmlFor="edit-workStation">Work station</Label>
+            <select
+              id="edit-workStation"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              value={workStation}
+              onChange={(e) => setWorkStation(e.target.value)}
+            >
+              <option value="">None</option>
+              {workStations?.map((w) => (
+                <option key={w.id} value={w.id}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
         {needsOrgUnit ? (
           <>
             <div>
@@ -493,11 +563,12 @@ function EditUserModal({ user, onClose }: { user: User; onClose: () => void }) {
               >
                 <option value="department">Department</option>
                 <option value="division">Division</option>
+                <option value="work_station">Workstation</option>
               </select>
             </div>
             <div>
               <Label htmlFor="edit-orgUnit">
-                {orgUnitType === "department" ? "Department" : "Division"}
+                {orgUnitType === "department" ? "Department" : orgUnitType === "division" ? "Division" : "Workstation"}
               </Label>
               <select
                 id="edit-orgUnit"

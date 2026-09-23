@@ -2,7 +2,7 @@ from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from apps.leave.permissions import IsSystemAdmin
+from apps.leave.permissions import CanManageOrganization
 
 from .models import Department, Designation, Division, Section, WorkStation
 from .serializers import (
@@ -12,12 +12,14 @@ from .serializers import (
 
 
 class ReadAllWriteAdminMixin:
-    """Any authenticated user may read; only SYSTEM_ADMIN may write."""
+    """Any authenticated user may read; writing requires the
+    SYSTEM_ADMIN-configurable MANAGE_ORGANIZATION permission (see
+    apps.leave.permissions.HasPermission)."""
 
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
-        return [IsSystemAdmin()]
+        return [CanManageOrganization()]
 
 
 class SoftDeleteMixin:

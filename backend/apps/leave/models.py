@@ -71,6 +71,16 @@ LOCATION_BY_STATUS = {
     ApplicationStatus.ARCHIVED: 'Completed',
 }
 
+def location_for_status(status, cea_routed=False):
+    """LOCATION_BY_STATUS lookup, with "HOD" swapped for "CEA" when the
+    application is routed through a CHIEF_EXTERNAL_AUDITOR instead of a
+    department/division Head (see LeaveApplication.requires_cea_review) --
+    both share the same PENDING_HOD_REVIEW/RETURNED_TO_HOD statuses, so this
+    is the one place that needs to know which label to show."""
+    location = LOCATION_BY_STATUS.get(status, status)
+    return location.replace('HOD', 'CEA') if cea_routed else location
+
+
 STATUS_LABEL_BY_STATUS = {
     ApplicationStatus.DRAFT: 'Draft',
     ApplicationStatus.SUBMITTED: 'Under Review',
@@ -294,7 +304,7 @@ class LeaveApplication(models.Model):
     # state, not stored as an independently editable field").
     @property
     def current_location(self):
-        return LOCATION_BY_STATUS.get(self.status, self.status)
+        return location_for_status(self.status, self.requires_cea_review)
 
     @property
     def current_status_label(self):
@@ -321,6 +331,21 @@ class LeaveApplication(models.Model):
         """
         from .permissions import needs_aag_review
         return needs_aag_review(self.employee)
+
+    @property
+    def requires_cea_review(self):
+        """
+        True if this applicant's only org assignment is a work station (no
+        department, no division -- see
+        accounts.serializers._validate_single_org_unit), so the normal HOD
+        stage is filled by the CHIEF_EXTERNAL_AUDITOR at their work station
+        instead of a department/division Head (see
+        apps.leave.permissions.matched_cea_for). Mutually exclusive with
+        requires_cag_review/requires_aag_review, which take priority.
+        """
+        if self.requires_cag_review or self.requires_aag_review:
+            return False
+        return self.employee.department_id is None and self.employee.division_id is None
 
     def save(self, *args, **kwargs):
         if not self.application_number:
@@ -502,6 +527,39 @@ class MizigoItem(models.Model):
     @property
     def total(self):
         return self.quantity * self.unit_cost
+
+
+class TravelPaymentSettings(models.Model):
+    """
+    SYSTEM_ADMIN-configured fixed TAXI/MIZIGO amount (JEDWALI 1 travel
+    payment request), auto-applied to every application that requests
+    travel assistance (see LeaveApplication.travel_assistance) -- these are
+    no longer itemized/employee-entered line items. A null amount means
+    that category isn't configured yet, so no row is created for it (see
+    LeaveApplicationWriteSerializer._sync_travel_payment_fixed_amounts).
+
+    Singleton: always row id=1, fetched/created via get_solo(). There is no
+    per-application override; both amounts apply system-wide.
+    """
+    taxi_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text='Fixed TAXI amount auto-applied to every application requesting travel '
+                   'assistance (TZS). Blank = not configured (no TAXI amount applied).',
+    )
+    mizigo_amount = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        help_text='Fixed MIZIGO amount auto-applied to every application requesting travel '
+                   'assistance (TZS). Blank = not configured (no MIZIGO amount applied).',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return 'Travel Payment Settings'
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
 
 
 class LeavePolicy(models.Model):

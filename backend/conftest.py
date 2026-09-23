@@ -5,7 +5,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import Role, User
 from apps.leave.models import LeaveType
-from apps.organization.models import Department, Division
+from apps.organization.models import Department, Division, WorkStation
 
 
 @pytest.fixture(autouse=True)
@@ -53,6 +53,11 @@ def department(db):
 @pytest.fixture
 def division(db):
     return Division.objects.create(name='Test Division', code='TESTDIV')
+
+
+@pytest.fixture
+def work_station(db):
+    return WorkStation.objects.create(name='Head Office', code='HQ')
 
 
 @pytest.fixture
@@ -112,6 +117,25 @@ def division_employee_user(make_user, division):
     return make_user(
         username='divemp1', full_name='Division Employee', check_number='DIVEMP-001', role=Role.EMPLOYEE,
         division=division,
+    )
+
+
+@pytest.fixture
+def cea_user(make_user, work_station):
+    """A CHIEF_EXTERNAL_AUDITOR at `work_station` -- has no division (org-unit exempt), so
+    routes through AAG matched by work station instead."""
+    return make_user(
+        username='cea1', full_name='Chief External Auditor', check_number='CEA-001',
+        role=Role.CHIEF_EXTERNAL_AUDITOR, work_station=work_station,
+    )
+
+
+@pytest.fixture
+def aag_user_at_station(make_user, work_station):
+    """An AAG at `work_station` -- reviews CHIEF_EXTERNAL_AUDITOR applicants at that station."""
+    return make_user(
+        username='aagstation1', full_name='AAG At Station', check_number='AAGSTN-001', role=Role.AAG,
+        work_station=work_station,
     )
 
 
@@ -186,6 +210,20 @@ def division_employee_draft_application(db, division_employee_user, leave_type):
         employee=division_employee_user,
         leave_type=leave_type,
         full_name=division_employee_user.full_name,
+        start_date=datetime.date(2026, 1, 5),  # Monday
+        last_date=datetime.date(2026, 1, 9),   # Friday, no holidays -> 5 working days
+    )
+    return app
+
+
+@pytest.fixture
+def cea_draft_application(db, cea_user, leave_type):
+    """A DRAFT application from a CHIEF_EXTERNAL_AUDITOR -- must route through AAG, matched by work station."""
+    from apps.leave.models import LeaveApplication
+    app = LeaveApplication.objects.create(
+        employee=cea_user,
+        leave_type=leave_type,
+        full_name=cea_user.full_name,
         start_date=datetime.date(2026, 1, 5),  # Monday
         last_date=datetime.date(2026, 1, 9),   # Friday, no holidays -> 5 working days
     )

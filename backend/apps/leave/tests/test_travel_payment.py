@@ -93,6 +93,8 @@ def person_types():
 
 
 def _travel_payload(person_types):
+    """NAULI (routes) only -- TAXI/MIZIGO are no longer client-writable, see
+    the TravelPaymentSettings fixed-amount tests below."""
     self_id = person_types['SELF'].id
     spouse_id = person_types['SPOUSE'].id
     dependants_id = person_types['DEPENDANTS'].id
@@ -117,12 +119,6 @@ def _travel_payload(person_types):
                 ],
             },
         ],
-        'taxi_expenses': [
-            {'description': 'Airport transfer', 'number_of_trips': 2, 'cost_per_trip': '100000.00', 'sort_order': 0},
-        ],
-        'mizigo_items': [
-            {'description': 'Extra luggage', 'quantity': 1, 'unit_cost': '100000.00', 'sort_order': 0},
-        ],
     }
 
 
@@ -139,18 +135,17 @@ def test_create_application_with_travel_payment_breakdown(as_user, employee_user
     app_id = resp.data['id']
     assert TravelRoute.objects.filter(application_id=app_id).count() == 2
     assert TravelRoutePassenger.objects.filter(route__application_id=app_id).count() == 5
-    assert TaxiExpense.objects.filter(application_id=app_id).count() == 1
-    assert MizigoItem.objects.filter(application_id=app_id).count() == 1
+    # No SYSTEM_ADMIN-configured TAXI/MIZIGO amount yet -> no rows.
+    assert TaxiExpense.objects.filter(application_id=app_id).count() == 0
+    assert MizigoItem.objects.filter(application_id=app_id).count() == 0
 
 
-def test_update_replaces_travel_routes_and_children(as_user, draft_application, employee_user, person_types):
+def test_update_replaces_travel_routes(as_user, draft_application, employee_user, person_types):
     route = TravelRoute.objects.create(
         application=draft_application, from_place='Old', to_place='Place',
         fare_per_person=Decimal('1000.00'), trip_type='ONE_WAY',
     )
     TravelRoutePassenger.objects.create(route=route, person_type=person_types['SELF'], idadi=1)
-    TaxiExpense.objects.create(application=draft_application, number_of_trips=1, cost_per_trip=Decimal('500'))
-    MizigoItem.objects.create(application=draft_application, description='Old bag', unit_cost=Decimal('500'))
 
     resp = as_user(employee_user).patch(
         f'/api/leave-applications/{draft_application.id}/',
@@ -162,14 +157,12 @@ def test_update_replaces_travel_routes_and_children(as_user, draft_application, 
     routes = list(TravelRoute.objects.filter(application=draft_application))
     assert len(routes) == 2
     assert TravelRoute.objects.filter(application=draft_application, from_place='Old').count() == 0
-    assert TaxiExpense.objects.filter(application=draft_application).count() == 1
-    assert MizigoItem.objects.filter(application=draft_application).count() == 1
 
 
 def test_read_serializer_exposes_computed_totals(as_user, draft_application, employee_user, person_types):
     as_user(employee_user).patch(
         f'/api/leave-applications/{draft_application.id}/',
-        _travel_payload(person_types),
+        {'travel_assistance': True, **_travel_payload(person_types)},
         format='json',
     )
     resp = as_user(employee_user).get(f'/api/leave-applications/{draft_application.id}/')
@@ -182,13 +175,10 @@ def test_read_serializer_exposes_computed_totals(as_user, draft_application, emp
     for passenger in route0['passengers']:
         assert passenger['total'] is not None
     assert Decimal(str(data['naule_grand_total'])) > 0
-    assert Decimal(str(data['taxi_grand_total'])) == Decimal('200000.00')
-    assert Decimal(str(data['mizigo_grand_total'])) == Decimal('100000.00')
-    assert Decimal(str(data['travel_payment_grand_total'])) == (
-        Decimal(str(data['naule_grand_total']))
-        + Decimal(str(data['taxi_grand_total']))
-        + Decimal(str(data['mizigo_grand_total']))
-    )
+    # No SYSTEM_ADMIN-configured TAXI/MIZIGO amount -> both contribute 0.
+    assert Decimal(str(data['taxi_grand_total'])) == Decimal('0')
+    assert Decimal(str(data['mizigo_grand_total'])) == Decimal('0')
+    assert Decimal(str(data['travel_payment_grand_total'])) == Decimal(str(data['naule_grand_total']))
 
 
 # --- Computed arithmetic (worked example numbers) ------------------------
@@ -377,3 +367,146 @@ def test_pdf_generation_does_not_crash_with_route_missing_passengers(
     _approve_application(draft_application, hod_user, hr_user, ao_user, as_user)
     resp = as_user(employee_user).post(f'/api/leave-applications/{draft_application.id}/generate-pdf/')
     assert resp.status_code == 201, resp.data
+
+
+# --- TravelPaymentSettings: SYSTEM_ADMIN-configurable TAXI/MIZIGO caps --
+
+SETTINGS_URL = '/api/travel-payment-settings/'
+
+
+def test_settings_default_to_unconfigured(as_user, employee_user):
+    resp = as_user(employee_user).get(SETTINGS_URL)
+    assert resp.status_code == 200, resp.data
+    assert resp.data['taxi_amount'] is None
+    assert resp.data['mizigo_amount'] is None
+
+
+def test_sysadmin_can_set_fixed_amounts(as_user, sysadmin_user):
+    resp = as_user(sysadmin_user).put(SETTINGS_URL, {
+        'taxi_amount': '100000.00', 'mizigo_amount': '100000.00',
+    }, format='json')
+    assert resp.status_code == 200, resp.data
+    assert Decimal(resp.data['taxi_amount']) == Decimal('100000.00')
+    assert Decimal(resp.data['mizigo_amount']) == Decimal('100000.00')
+
+    # Persisted -- a fresh GET reflects it.
+    resp = as_user(sysadmin_user).get(SETTINGS_URL)
+    assert Decimal(resp.data['taxi_amount']) == Decimal('100000.00')
+
+
+@pytest.mark.parametrize('role_fixture', ['employee_user', 'hod_user', 'hr_user', 'ao_user'])
+def test_non_admin_cannot_set_fixed_amounts(request, as_user, role_fixture):
+    user = request.getfixturevalue(role_fixture)
+    resp = as_user(user).put(SETTINGS_URL, {'taxi_amount': '1.00'}, format='json')
+    assert resp.status_code == 403, resp.data
+
+
+def test_travel_assistance_auto_populates_configured_fixed_amounts(
+    as_user, sysadmin_user, draft_application, employee_user,
+):
+    as_user(sysadmin_user).put(SETTINGS_URL, {
+        'taxi_amount': '100000.00', 'mizigo_amount': '75000.00',
+    }, format='json')
+
+    resp = as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': True}, format='json',
+    )
+    assert resp.status_code == 200, resp.data
+
+    taxi = TaxiExpense.objects.get(application=draft_application)
+    assert taxi.number_of_trips == 1
+    assert taxi.cost_per_trip == Decimal('100000.00')
+    mizigo = MizigoItem.objects.get(application=draft_application)
+    assert mizigo.quantity == 1
+    assert mizigo.unit_cost == Decimal('75000.00')
+
+
+def test_no_travel_assistance_means_no_taxi_or_mizigo_regardless_of_configured_amount(
+    as_user, sysadmin_user, draft_application, employee_user,
+):
+    as_user(sysadmin_user).put(SETTINGS_URL, {
+        'taxi_amount': '100000.00', 'mizigo_amount': '100000.00',
+    }, format='json')
+
+    resp = as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': False}, format='json',
+    )
+    assert resp.status_code == 200, resp.data
+    assert not TaxiExpense.objects.filter(application=draft_application).exists()
+    assert not MizigoItem.objects.filter(application=draft_application).exists()
+
+
+def test_unconfigured_category_contributes_nothing(as_user, sysadmin_user, draft_application, employee_user):
+    """Only TAXI configured -- MIZIGO stays unconfigured and gets no row."""
+    as_user(sysadmin_user).put(SETTINGS_URL, {'taxi_amount': '100000.00'}, format='json')
+
+    resp = as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': True}, format='json',
+    )
+    assert resp.status_code == 200, resp.data
+    assert TaxiExpense.objects.filter(application=draft_application).exists()
+    assert not MizigoItem.objects.filter(application=draft_application).exists()
+
+
+def test_toggling_travel_assistance_off_clears_previously_populated_amounts(
+    as_user, sysadmin_user, draft_application, employee_user,
+):
+    as_user(sysadmin_user).put(SETTINGS_URL, {'taxi_amount': '100000.00', 'mizigo_amount': '100000.00'}, format='json')
+    as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': True}, format='json',
+    )
+    assert TaxiExpense.objects.filter(application=draft_application).exists()
+
+    resp = as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': False}, format='json',
+    )
+    assert resp.status_code == 200, resp.data
+    assert not TaxiExpense.objects.filter(application=draft_application).exists()
+    assert not MizigoItem.objects.filter(application=draft_application).exists()
+
+
+def test_client_supplied_taxi_and_mizigo_input_is_ignored(as_user, sysadmin_user, employee_user, leave_type):
+    """taxi_expenses/mizigo_items are not client-writable -- only the
+    SYSTEM_ADMIN-configured fixed amount is ever used, regardless of what
+    (if anything) the client sends for those keys."""
+    as_user(sysadmin_user).put(SETTINGS_URL, {'taxi_amount': '100000.00', 'mizigo_amount': '100000.00'}, format='json')
+
+    resp = as_user(employee_user).post('/api/leave-applications/', {
+        'leave_type': leave_type.id, 'start_date': '2026-01-05', 'last_date': '2026-01-09',
+        'travel_assistance': True,
+        'taxi_expenses': [{'description': 'Client attempt', 'number_of_trips': 99, 'cost_per_trip': '1.00'}],
+        'mizigo_items': [{'description': 'Client attempt', 'quantity': 99, 'unit_cost': '1.00'}],
+    }, format='json')
+    assert resp.status_code == 201, resp.data
+
+    taxi = TaxiExpense.objects.get(application_id=resp.data['id'])
+    assert taxi.number_of_trips == 1
+    assert taxi.cost_per_trip == Decimal('100000.00')
+
+
+def test_admin_amount_change_is_reflected_on_next_save(
+    as_user, sysadmin_user, draft_application, employee_user,
+):
+    as_user(sysadmin_user).put(SETTINGS_URL, {'taxi_amount': '100000.00'}, format='json')
+    as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': True}, format='json',
+    )
+    assert TaxiExpense.objects.get(application=draft_application).cost_per_trip == Decimal('100000.00')
+
+    as_user(sysadmin_user).put(SETTINGS_URL, {'taxi_amount': '150000.00'}, format='json')
+    as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'contact_address': 'updated'}, format='json',
+    )
+    assert TaxiExpense.objects.get(application=draft_application).cost_per_trip == Decimal('150000.00')
+
+
+def test_submit_succeeds_with_configured_fixed_amounts(
+    as_user, sysadmin_user, draft_application, employee_user,
+):
+    as_user(sysadmin_user).put(SETTINGS_URL, {'taxi_amount': '100000.00', 'mizigo_amount': '100000.00'}, format='json')
+    as_user(employee_user).patch(
+        f'/api/leave-applications/{draft_application.id}/', {'travel_assistance': True}, format='json',
+    )
+
+    resp = as_user(employee_user).post(f'/api/leave-applications/{draft_application.id}/submit/')
+    assert resp.status_code == 200, resp.data

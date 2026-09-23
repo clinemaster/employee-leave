@@ -21,6 +21,9 @@ export type Role =
 // Applicant roles whose leave applications must be routed through CAG
 // review instead of the normal HOD stage (see backend
 // apps.accounts.models.CAG_APPLICANT_ROLES / LeaveApplication.requires_cag_review).
+// CHIEF_EXTERNAL_AUDITOR is deliberately NOT included -- their own leave
+// routes through AAG instead, matched by work station (see
+// requires_aag_review), since they have no division to match by.
 export const CAG_APPLICANT_ROLES: Role[] = [
   "AUTHORIZING_OFFICER",
   "HEAD_OF_DEPARTMENT",
@@ -29,14 +32,88 @@ export const CAG_APPLICANT_ROLES: Role[] = [
   "CHIEF_ACCOUNTANT",
   "DAHRM",
   "ADA",
-  "CHIEF_EXTERNAL_AUDITOR",
 ];
 
-// Any of the "line manager" roles that review Section B1.
+// Any of the "line manager" roles that review Section B1. CHIEF_EXTERNAL_AUDITOR
+// acts as "head of work station" for employees at their work station whose
+// department/division has no active head and no manager set (see backend
+// apps.leave.permissions.matched_cea_for) -- department/division heads
+// always take priority.
 export const HOD_ROLES: Role[] = [
   "HEAD_OF_DEPARTMENT",
   "DAG",
   "HEAD_OF_SECTION",
+  "CHIEF_EXTERNAL_AUDITOR",
+];
+
+// Tanzania's regions (mikoa) — mirrors backend apps.accounts.models.Region
+// exactly. Used for User.place_of_domicile (a fixed enumeration, not an
+// admin-managed catalog like Designation/Work Station).
+export type Region =
+  | "ARUSHA"
+  | "DAR_ES_SALAAM"
+  | "DODOMA"
+  | "GEITA"
+  | "IRINGA"
+  | "KAGERA"
+  | "KATAVI"
+  | "KIGOMA"
+  | "KILIMANJARO"
+  | "LINDI"
+  | "MANYARA"
+  | "MARA"
+  | "MBEYA"
+  | "MOROGORO"
+  | "MTWARA"
+  | "MWANZA"
+  | "NJOMBE"
+  | "PEMBA_NORTH"
+  | "PEMBA_SOUTH"
+  | "PWANI"
+  | "RUKWA"
+  | "RUVUMA"
+  | "SHINYANGA"
+  | "SIMIYU"
+  | "SINGIDA"
+  | "SONGWE"
+  | "TABORA"
+  | "TANGA"
+  | "ZANZIBAR_NORTH"
+  | "ZANZIBAR_SOUTH"
+  | "ZANZIBAR_WEST";
+
+export const REGIONS: { code: Region; label: string }[] = [
+  { code: "ARUSHA", label: "Arusha" },
+  { code: "DAR_ES_SALAAM", label: "Dar es Salaam" },
+  { code: "DODOMA", label: "Dodoma" },
+  { code: "GEITA", label: "Geita" },
+  { code: "IRINGA", label: "Iringa" },
+  { code: "KAGERA", label: "Kagera" },
+  { code: "KATAVI", label: "Katavi" },
+  { code: "KIGOMA", label: "Kigoma" },
+  { code: "KILIMANJARO", label: "Kilimanjaro" },
+  { code: "LINDI", label: "Lindi" },
+  { code: "MANYARA", label: "Manyara" },
+  { code: "MARA", label: "Mara" },
+  { code: "MBEYA", label: "Mbeya" },
+  { code: "MOROGORO", label: "Morogoro" },
+  { code: "MTWARA", label: "Mtwara" },
+  { code: "MWANZA", label: "Mwanza" },
+  { code: "NJOMBE", label: "Njombe" },
+  { code: "PEMBA_NORTH", label: "Pemba North" },
+  { code: "PEMBA_SOUTH", label: "Pemba South" },
+  { code: "PWANI", label: "Pwani" },
+  { code: "RUKWA", label: "Rukwa" },
+  { code: "RUVUMA", label: "Ruvuma" },
+  { code: "SHINYANGA", label: "Shinyanga" },
+  { code: "SIMIYU", label: "Simiyu" },
+  { code: "SINGIDA", label: "Singida" },
+  { code: "SONGWE", label: "Songwe" },
+  { code: "TABORA", label: "Tabora" },
+  { code: "TANGA", label: "Tanga" },
+  { code: "ZANZIBAR_NORTH", label: "Zanzibar North" },
+  { code: "ZANZIBAR_SOUTH", label: "Zanzibar South" },
+  { code: "ZANZIBAR_WEST", label: "Zanzibar West" },
 ];
 
 export interface User {
@@ -52,6 +129,7 @@ export interface User {
   additional_roles?: Role[];
   check_number?: string | null;
   personnel_file_number?: string | null;
+  place_of_domicile?: Region | "" | null;
   designation?: number | null;
   designation_name?: string | null;
   work_station?: number | null;
@@ -77,8 +155,11 @@ export function allUserRoles(user: Pick<User, "role" | "additional_roles"> | nul
   return [user.role, ...(user.additional_roles ?? [])];
 }
 
-// The name of whichever org unit the user belongs to (they belong to
-// exactly one of department/division) — for display.
+// The name of whichever of department/division the user belongs to (never
+// work_station -- that's shown/sent as its own separate field everywhere
+// this is used, e.g. LeaveApplicationForm's `station` and this page's "Work
+// Station" field). Null for a work-station-primary employee, who has
+// neither.
 export function orgUnitName(
   user: Pick<User, "department_name" | "division_name"> | null | undefined
 ): string | null {
@@ -214,6 +295,12 @@ export interface LeaveApplication {
   // routed through AAG review instead of the normal HOD stage (only when
   // requires_cag_review is false — CAG takes priority).
   requires_aag_review?: boolean;
+  // Derived server-side from the employee's org assignment — see backend
+  // LeaveApplication.requires_cea_review. True if the normal HOD stage is
+  // filled by the CHIEF_EXTERNAL_AUDITOR at the employee's work station
+  // instead of a department/division Head (employees whose only org
+  // assignment is a work station, with no department or division).
+  requires_cea_review?: boolean;
   recommendation?: LeaveRecommendation | null;
   cag_review?: CAGReview | null;
   aag_review?: AAGReview | null;
@@ -359,5 +446,16 @@ export interface LeavePolicy {
   sort_order: number;
   description?: string;
   created_at?: string;
+  updated_at?: string;
+}
+
+// SYSTEM_ADMIN-configured fixed TAXI/MIZIGO amount, auto-applied to every
+// leave application that requests travel assistance (see backend
+// apps.leave.models.TravelPaymentSettings) — not itemized/employee-entered.
+// Null = that category isn't configured (contributes 0). Singleton — no id,
+// always GET/PUT /api/travel-payment-settings/.
+export interface TravelPaymentSettings {
+  taxi_amount: number | null;
+  mizigo_amount: number | null;
   updated_at?: string;
 }

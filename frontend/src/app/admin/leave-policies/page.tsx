@@ -1,16 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { extractErrorMessage } from "@/lib/api/errors";
 import { useGetLeaveTypesQuery } from "@/features/leave/catalogApi";
 import {
   useGetLeavePoliciesQuery,
   useCreateLeavePolicyMutation,
   useUpdateLeavePolicyMutation,
   useDeleteLeavePolicyMutation,
+  useGetTravelPaymentSettingsQuery,
+  useUpdateTravelPaymentSettingsMutation,
 } from "@/features/leave/policiesApi";
 import type { LeavePolicy } from "@/types";
 
@@ -116,6 +119,8 @@ export default function AdminLeavePoliciesPage() {
   return (
     <AppShell>
       <h1 className="mb-6 text-xl font-semibold text-gray-900">Manage Leave Policies</h1>
+
+      <TravelPaymentSettingsPanel />
 
       <Card className="mb-6">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">
@@ -264,5 +269,86 @@ export default function AdminLeavePoliciesPage() {
         )}
       </Card>
     </AppShell>
+  );
+}
+
+// SYSTEM_ADMIN-configured fixed TAXI/MIZIGO amount, auto-applied to every
+// leave application that requests travel assistance (see backend
+// apps.leave.models.TravelPaymentSettings) — not itemized/employee-entered.
+// See TravelPaymentStep.tsx, which shows these as read-only figures once
+// "Request travel assistance" is checked.
+function TravelPaymentSettingsPanel() {
+  const { data, isLoading } = useGetTravelPaymentSettingsQuery();
+  const [updateSettings, { isLoading: isSaving }] = useUpdateTravelPaymentSettingsMutation();
+
+  const [taxiAmount, setTaxiAmount] = useState("");
+  const [mizigoAmount, setMizigoAmount] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    if (!data) return;
+    setTaxiAmount(data.taxi_amount != null ? String(data.taxi_amount) : "");
+    setMizigoAmount(data.mizigo_amount != null ? String(data.mizigo_amount) : "");
+  }, [data]);
+
+  async function handleSave() {
+    setError(null);
+    setSaved(false);
+    try {
+      await updateSettings({
+        taxi_amount: taxiAmount.trim() === "" ? null : Number(taxiAmount),
+        mizigo_amount: mizigoAmount.trim() === "" ? null : Number(mizigoAmount),
+      }).unwrap();
+      setSaved(true);
+    } catch (err) {
+      setError(extractErrorMessage(err, "Failed to save. Please try again."));
+    }
+  }
+
+  return (
+    <Card className="mb-6">
+      <h2 className="mb-3 text-sm font-semibold text-gray-900">Travel Payment Settings</h2>
+      <p className="mb-3 text-xs text-gray-500">
+        Fixed TAXI and MIZIGO amount auto-applied to every leave application that requests travel
+        assistance (JEDWALI 1) — these are constant, not itemized/entered by the employee. Leave
+        blank to not apply that category.
+      </p>
+      {isLoading ? (
+        <p className="text-sm text-gray-500">Loading...</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <Label htmlFor="taxi_amount">TAXI Amount (TZS)</Label>
+            <Input
+              id="taxi_amount"
+              type="number"
+              min={0}
+              placeholder="(blank = not applied)"
+              value={taxiAmount}
+              onChange={(e) => setTaxiAmount(e.target.value)}
+            />
+          </div>
+          <div>
+            <Label htmlFor="mizigo_amount">MIZIGO Amount (TZS)</Label>
+            <Input
+              id="mizigo_amount"
+              type="number"
+              min={0}
+              placeholder="(blank = not applied)"
+              value={mizigoAmount}
+              onChange={(e) => setMizigoAmount(e.target.value)}
+            />
+          </div>
+          <div className="flex items-end gap-2">
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "Saving..." : "Save"}
+            </Button>
+            {saved ? <span className="text-sm text-green-700">Saved.</span> : null}
+          </div>
+        </div>
+      )}
+      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+    </Card>
   );
 }

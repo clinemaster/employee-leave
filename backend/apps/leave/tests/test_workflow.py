@@ -42,9 +42,11 @@ def test_submit_rejected_with_clear_error_when_employee_has_no_reviewer(as_user,
     the application to PENDING_HOD_REVIEW, where it got stuck forever since
     recommend/return both require one (effective_reviewer_for() -> None means
     no one, including SYSTEM_ADMIN via the normal role checks, could ever act
-    on it). Now rejected at submit time with a clear message -- unless a
-    fallback HR Admin/Authorizing Officer exists, in which case it routes
-    there instead (see test_submit_falls_back_to_hr_admin_when_no_head_or_manager).
+    on it). Now rejected at submit time with a clear message. This is now
+    strict per the employee's own org unit: the org-wide HR Admin/Authorizing
+    Officer fallback is deliberately NOT accepted as a substitute for a
+    missing department/division/work-station reviewer -- see
+    test_submit_rejected_even_when_hr_admin_fallback_exists.
     """
     orphan = make_user(username='orphan', full_name='No Manager', check_number='ORPH-001')
     assert orphan.manager is None
@@ -61,9 +63,14 @@ def test_submit_rejected_with_clear_error_when_employee_has_no_reviewer(as_user,
     assert app.status == S.DRAFT  # unchanged -- rejected before any transition
 
 
-def test_submit_falls_back_to_hr_admin_when_no_head_or_manager(as_user, make_user, leave_type, hr_user):
-    """When an employee has no matched head and no manager, submission routes
-    to a fallback HR Admin instead of being rejected."""
+def test_submit_rejected_even_when_hr_admin_fallback_exists(as_user, make_user, leave_type, hr_user):
+    """
+    An employee's own organizational reviewer (HOD/DAG for their department
+    or division, CEA for their work station) must exist before they may
+    submit -- an org-wide HR Admin/Authorizing Officer being available is not
+    an acceptable substitute (see the "Employee Organizational Assignment and
+    Leave Approval Workflow" spec, section 9: missing-reviewer validation).
+    """
     orphan = make_user(username='orphan2', full_name='No Manager Two', check_number='ORPH-002')
     app = LeaveApplication.objects.create(
         employee=orphan, leave_type=leave_type, full_name=orphan.full_name,
@@ -71,10 +78,10 @@ def test_submit_falls_back_to_hr_admin_when_no_head_or_manager(as_user, make_use
     )
     client = as_user(orphan)
     resp = client.post(_url(app.id, 'submit'))
-    assert resp.status_code == 200, resp.data
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST, resp.data
     app.refresh_from_db()
-    assert app.status == S.PENDING_HOD_REVIEW
-    assert Notification.objects.filter(related_application=app, user=hr_user).exists()
+    assert app.status == S.DRAFT
+    assert not Notification.objects.filter(related_application=app, user=hr_user).exists()
 
 
 def test_full_happy_path_workflow(as_user, draft_application, employee_user, hod_user, hr_user, ao_user):

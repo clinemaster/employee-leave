@@ -14,16 +14,18 @@ from apps.audit.models import AuditLog
 from apps.documents.models import LeaveDocument
 
 from .models import (
-    LOCATION_BY_STATUS, LeaveApplication, LeaveBalance, LeavePolicy, LeaveType, PersonType,
+    LeaveApplication, LeaveBalance, LeavePolicy, LeaveType, PersonType, TravelPaymentSettings,
+    location_for_status,
 )
 from .permissions import (
-    CanAccessLeaveApplication, IsSystemAdmin, assert_can_edit_fields,
+    CanAccessLeaveApplication, CanManageLeavePolicies, CanManageLeaveTypes,
+    CanManagePersonTypes, IsSystemAdmin, assert_can_edit_fields,
     can_view_application, visible_queryset_for,
 )
 from .serializers import (
     LeaveApplicationSerializer, LeaveApplicationWriteSerializer,
     LeaveBalanceSerializer, LeavePolicySerializer, LeaveTypeSerializer,
-    PersonTypeSerializer, WorkflowActionSerializer,
+    PersonTypeSerializer, TravelPaymentSettingsSerializer, WorkflowActionSerializer,
     WorkingDaysPreviewResponseSerializer, WorkingDaysPreviewSerializer,
 )
 from .workflow import WorkflowError, perform_transition
@@ -31,13 +33,19 @@ from .workingdays import calculate_working_days
 
 
 class ReadAllWriteAdminMixin:
+    """Any authenticated user may read; write requires `manage_permission_class`
+    (defaults to SYSTEM_ADMIN-only; subclasses set it to a dynamic
+    CanManage* permission -- see apps.leave.permissions.HasPermission)."""
+    manage_permission_class = IsSystemAdmin
+
     def get_permissions(self):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()]
-        return [IsSystemAdmin()]
+        return [self.manage_permission_class()]
 
 
 class LeaveTypeViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
+    manage_permission_class = CanManageLeaveTypes
     queryset = LeaveType.objects.filter(deleted_at__isnull=True)
     serializer_class = LeaveTypeSerializer
     filterset_fields = ['is_active']
@@ -93,6 +101,7 @@ class PersonTypeViewSet(ReadAllWriteAdminMixin, viewsets.ModelViewSet):
     on the travel payment breakdown. Mirrors LeaveTypeViewSet exactly,
     including the bulk reorder action.
     """
+    manage_permission_class = CanManagePersonTypes
     queryset = PersonType.objects.filter(deleted_at__isnull=True)
     serializer_class = PersonTypeSerializer
     filterset_fields = ['is_active']
@@ -147,8 +156,33 @@ class LeavePolicyViewSet(viewsets.ModelViewSet):
     """
     queryset = LeavePolicy.objects.select_related('leave_type').all()
     serializer_class = LeavePolicySerializer
-    permission_classes = [IsSystemAdmin]
+    permission_classes = [CanManageLeavePolicies]
     filterset_fields = ['leave_type', 'is_active']
+
+
+class TravelPaymentSettingsView(APIView):
+    """
+    GET/PUT /api/travel-payment-settings/ — SYSTEM_ADMIN-configurable
+    maximum TAXI/MIZIGO subtotal (JEDWALI 1 travel payment request),
+    enforced at submit time (see apps.leave.workflow._check_role_for_action).
+    Singleton (TravelPaymentSettings.get_solo) — any authenticated user may
+    read it (the employee-facing form needs the limits to warn live), only
+    CanManageLeavePolicies may change it.
+    """
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [CanManageLeavePolicies()]
+
+    def get(self, request):
+        return Response(TravelPaymentSettingsSerializer(TravelPaymentSettings.get_solo()).data)
+
+    def put(self, request):
+        settings = TravelPaymentSettings.get_solo()
+        serializer = TravelPaymentSettingsSerializer(settings, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 class LeaveBalanceViewSet(viewsets.ReadOnlyModelViewSet):
@@ -241,10 +275,10 @@ class _AuditLogSerializer(serializers.ModelSerializer):
         ]
 
     def get_previous_location(self, obj):
-        return LOCATION_BY_STATUS.get(obj.previous_status, obj.previous_status)
+        return location_for_status(obj.previous_status, obj.application.requires_cea_review)
 
     def get_new_location(self, obj):
-        return LOCATION_BY_STATUS.get(obj.new_status, obj.new_status)
+        return location_for_status(obj.new_status, obj.application.requires_cea_review)
 
 
 class _LeaveDocumentSerializer(serializers.ModelSerializer):
@@ -300,7 +334,16 @@ class LeaveApplicationViewSet(viewsets.ModelViewSet):
             'dependants', 'travel_routes__passengers__person_type',
             'taxi_expenses', 'mizigo_items',
         )
-        return visible_queryset_for(self.request.user, qs)
+        qs = visible_queryset_for(self.request.user, qs)
+        # ?exclude_own=true -- used by reviewer-facing pages (Review Queue,
+        # Recommendations, HR/AO Applications, CAG/AAG queues) so a
+        # reviewer's own submitted application never shows up mixed into
+        # their review list (see "My Applications and Review Queue" spec).
+        # Only ever narrows further than visible_queryset_for already
+        # permits -- never a source of broader access.
+        if self.request.query_params.get('exclude_own') == 'true':
+            qs = qs.exclude(employee=self.request.user)
+        return qs
 
     def get_serializer_class(self):
         if self.action in ('create', 'update', 'partial_update'):

@@ -14,6 +14,7 @@ export default function CagApplicationsPage() {
           { label: "Recommended", status: "CAG_RECOMMENDED" },
           { label: "Rejected", status: "DENIED" },
         ]}
+        unattendedStatuses={["PENDING_CAG_REVIEW"]}
       />
     </AppShell>
   );

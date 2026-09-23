@@ -12,6 +12,10 @@ const CAG_STAGES = ["Employee", "CAG", "HR", "Authorizing Officer", "Completed"]
 // LeaveApplication.requires_aag_review) skip the HOD stage too — AAG stands
 // in for it instead.
 const AAG_STAGES = ["Employee", "AAG", "HR", "Authorizing Officer", "Completed"] as const;
+// Employees whose only org assignment is a work station (see
+// LeaveApplication.requires_cea_review) skip the HOD stage too — the
+// CHIEF_EXTERNAL_AUDITOR at their work station stands in for it instead.
+const CEA_STAGES = ["Employee", "CEA", "HR", "Authorizing Officer", "Completed"] as const;
 
 // Which stepper stage a `current_location` value belongs to — locations like
 // "Employee — Action Required" or "HOD — Action Required" still map to their
@@ -39,7 +43,9 @@ export function WorkflowStatusCard({ application }: { application: LeaveApplicat
     ? CAG_STAGES
     : application.requires_aag_review
       ? AAG_STAGES
-      : HOD_STAGES;
+      : application.requires_cea_review
+        ? CEA_STAGES
+        : HOD_STAGES;
   const activeIndex = stageIndex(STAGES, location);
   const isTerminal = location === "Completed";
 

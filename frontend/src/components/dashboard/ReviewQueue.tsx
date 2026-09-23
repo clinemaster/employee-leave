@@ -20,11 +20,12 @@ function formatDateTime(iso: string): string {
   });
 }
 
-// A single, untabbed list of every application visible to this role (same
-// server-side scope as the existing tabbed pages — see
-// apps.leave.permissions.visible_queryset_for/hod_scope_q), newest first
-// (backend default ordering, LeaveApplication.Meta.ordering = ['-created_at']),
-// color-coded by whether this role still owes it an action.
+// A single, untabbed list of every application visible to this role, minus
+// the caller's own submissions (same server-side scope as the existing
+// tabbed pages — see apps.leave.permissions.visible_queryset_for/
+// hod_scope_q, narrowed by `exclude_own`), newest first (backend default
+// ordering, LeaveApplication.Meta.ordering = ['-created_at']), color-coded
+// by whether this role still owes it an action.
 export function ReviewQueue({
   detailBasePath,
   unattendedStatuses,
@@ -33,7 +34,10 @@ export function ReviewQueue({
   unattendedStatuses: LeaveStatus[];
 }) {
   const [page, setPage] = useState(1);
-  const { data, isLoading } = useGetLeaveApplicationsQuery({ page });
+  // Reviewer-facing scope: excludes the caller's own submitted applications
+  // — "My Applications" (a separate page) is where those belong. See
+  // apps.leave.views.LeaveApplicationViewSet.get_queryset's `exclude_own`.
+  const { data, isLoading } = useGetLeaveApplicationsQuery({ page, exclude_own: true });
 
   const items = data?.results ?? [];
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
