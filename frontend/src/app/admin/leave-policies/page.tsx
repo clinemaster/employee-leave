@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AppShell } from "@/components/dashboard/AppShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -281,16 +281,12 @@ function TravelPaymentSettingsPanel() {
   const { data, isLoading } = useGetTravelPaymentSettingsQuery();
   const [updateSettings, { isLoading: isSaving }] = useUpdateTravelPaymentSettingsMutation();
 
-  const [taxiAmount, setTaxiAmount] = useState("");
-  const [mizigoAmount, setMizigoAmount] = useState("");
+  const [taxiAmountOverride, setTaxiAmountOverride] = useState<string | null>(null);
+  const [mizigoAmountOverride, setMizigoAmountOverride] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    if (!data) return;
-    setTaxiAmount(data.taxi_amount != null ? String(data.taxi_amount) : "");
-    setMizigoAmount(data.mizigo_amount != null ? String(data.mizigo_amount) : "");
-  }, [data]);
+  const taxiAmount = taxiAmountOverride ?? (data?.taxi_amount != null ? String(data.taxi_amount) : "");
+  const mizigoAmount = mizigoAmountOverride ?? (data?.mizigo_amount != null ? String(data.mizigo_amount) : "");
 
   async function handleSave() {
     setError(null);
@@ -326,7 +322,7 @@ function TravelPaymentSettingsPanel() {
               min={0}
               placeholder="(blank = not applied)"
               value={taxiAmount}
-              onChange={(e) => setTaxiAmount(e.target.value)}
+              onChange={(e) => setTaxiAmountOverride(e.target.value)}
             />
           </div>
           <div>
@@ -337,7 +333,7 @@ function TravelPaymentSettingsPanel() {
               min={0}
               placeholder="(blank = not applied)"
               value={mizigoAmount}
-              onChange={(e) => setMizigoAmount(e.target.value)}
+              onChange={(e) => setMizigoAmountOverride(e.target.value)}
             />
           </div>
           <div className="flex items-end gap-2">
