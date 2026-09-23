@@ -442,7 +442,7 @@ function DepartmentHodPanel() {
       <h2 className="mb-1 text-sm font-semibold text-gray-900">Department Heads</h2>
       <p className="mb-3 text-xs text-gray-500">
         HEAD_OF_DEPARTMENT can only be granted to someone who already belongs to the department —
-        move them into the department first (Manage Users) if they aren't a member yet.
+        move them into the department first (Manage Users) if they aren&apos;t a member yet.
       </p>
       {isLoading ? (
         <p className="text-sm text-gray-500">Loading...</p>
