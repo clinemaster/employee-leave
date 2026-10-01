@@ -1,4 +1,4 @@
-name: Deploy to Hostinger
+name: Deploy to Hostinger VPS
 
 on:
   push:
@@ -6,12 +6,15 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-hostinger
+  group: deploy-vps
   cancel-in-progress: false
+
+env:
+  APP_DIR: /opt/employee-leave
 
 jobs:
   deploy:
-    name: Build and deploy frontend to Hostinger
+    name: Deploy backend and frontend to VPS
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -32,25 +35,43 @@ jobs:
 
       - name: Configure SSH
         env:
-          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
-          SSH_HOST: ${{ secrets.HOSTINGER_HOST }}
-          SSH_PORT: ${{ secrets.HOSTINGER_PORT }}
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SSH_HOST: ${{ vars.VPS_HOST }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
-          ssh-keyscan -p "${SSH_PORT:-65002}" "$SSH_HOST" >> ~/.ssh/known_hosts
+          ssh-keyscan "$SSH_HOST" >> ~/.ssh/known_hosts
 
-      - name: Upload to Hostinger
+      - name: Upload code
         env:
-          SSH_HOST: ${{ secrets.HOSTINGER_HOST }}
-          SSH_PORT: ${{ secrets.HOSTINGER_PORT }}
-          SSH_USER: ${{ secrets.HOSTINGER_USER }}
-          REMOTE_DIR: ${{ secrets.HOSTINGER_REMOTE_DIR }}
+          SSH_HOST: ${{ vars.VPS_HOST }}
+          SSH_USER: ${{ vars.VPS_USER }}
         run: |
-          rsync -az --delete \
-            --exclude node_modules --exclude .env* \
-            -e "ssh -i ~/.ssh/id_deploy -p ${SSH_PORT:-65002}" \
-            frontend/ "$SSH_USER@$SSH_HOST:$REMOTE_DIR/"
-          ssh -i ~/.ssh/id_deploy -p "${SSH_PORT:-65002}" "$SSH_USER@$SSH_HOST" \
-            "cd $REMOTE_DIR && npm ci --omit=dev && (touch tmp/restart.txt 2>/dev/null || true)"
+          SSH="ssh -i ~/.ssh/id_deploy"
+          $SSH "$SSH_USER@$SSH_HOST" "mkdir -p $APP_DIR/backend $APP_DIR/frontend"
+          rsync -az --delete -e "$SSH" \
+            --exclude .env --exclude '.env*' --exclude db.sqlite3 --exclude venv \
+            --exclude __pycache__ --exclude media \
+            backend/ "$SSH_USER@$SSH_HOST:$APP_DIR/backend/"
+          rsync -az --delete -e "$SSH" \
+            --exclude node_modules --exclude '.env*' \
+            frontend/ "$SSH_USER@$SSH_HOST:$APP_DIR/frontend/"
+
+      - name: Install, migrate, restart
+        env:
+          SSH_HOST: ${{ vars.VPS_HOST }}
+          SSH_USER: ${{ vars.VPS_USER }}
+        run: |
+          ssh -i ~/.ssh/id_deploy "$SSH_USER@$SSH_HOST" bash -se <<REMOTE
+          set -euo pipefail
+          cd $APP_DIR/backend
+          [ -d venv ] || python3 -m venv venv
+          venv/bin/pip install -q -r requirements.txt gunicorn
+          set -a; . $APP_DIR/backend.env; set +a
+          venv/bin/python manage.py migrate --noinput
+          venv/bin/python manage.py collectstatic --noinput
+          cd $APP_DIR/frontend
+          npm ci --omit=dev
+          systemctl restart employee-leave-api employee-leave-web
+          REMOTE

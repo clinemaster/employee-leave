@@ -407,22 +407,29 @@ Define and document retention (e.g. 30 daily + 12 monthly database backups)
 and an offsite/secondary-region copy so a single-site failure doesn't lose
 both primary and backup.
 
-## Automatic deploy to Hostinger (leavedemo.online)
+## Automatic deploy to Hostinger VPS (leavedemo.online)
 
-`.github/workflows/deploy-hostinger.yml` builds the frontend and uploads it to
-Hostinger over SSH on every push to `main` (or manually via *Run workflow*).
+`.github/workflows/deploy-hostinger.yml` runs on every push to `main` (or
+manually via *Run workflow*). It builds the frontend, rsyncs `backend/` and
+`frontend/` to `/opt/employee-leave` on the VPS, installs dependencies, runs
+migrations/collectstatic and restarts two systemd services.
 
-Setup (GitHub → Settings → Secrets and variables → Actions):
+GitHub → Settings → Secrets and variables → Actions:
 
 | Name | Type | Value |
 |---|---|---|
-| `HOSTINGER_HOST` | secret | SSH host/IP from hPanel → Advanced → SSH Access |
-| `HOSTINGER_PORT` | secret | SSH port (Hostinger default `65002`) |
-| `HOSTINGER_USER` | secret | SSH username |
-| `HOSTINGER_SSH_KEY` | secret | Private key whose public key is added in hPanel SSH Access |
-| `HOSTINGER_REMOTE_DIR` | secret | Target dir, e.g. `/home/<user>/domains/leavedemo.online/nodejs` |
-| `NEXT_PUBLIC_API_URL` | variable | Public URL of the backend API |
+| `VPS_HOST` | variable | `76.13.145.200` |
+| `VPS_USER` | variable | `root` (a dedicated deploy user is safer) |
+| `VPS_SSH_KEY` | secret | Private key; add its public key to `~/.ssh/authorized_keys` on the VPS |
+| `NEXT_PUBLIC_API_URL` | variable | Public API URL, e.g. `https://leavedemo.online/api` |
 
-The domain must be set up in hPanel as a Node.js web app (start command
-`npm start`) with SSH access enabled. The Django backend needs separate
-hosting (e.g. a VPS); shared hosting cannot run it.
+One-time server setup (Ubuntu): install `python3-venv nginx nodejs npm
+postgresql` (or use SQLite for a demo); create `/opt/employee-leave/backend.env`
+with the backend variables from section 1 (`DJANGO_SECRET_KEY`,
+`DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=leavedemo.online`, `DATABASE_URL`,
+`CORS_ALLOWED_ORIGINS=https://leavedemo.online`); create systemd units
+`employee-leave-api` (gunicorn `naot_leave.wsgi` on 127.0.0.1:8000, with
+`EnvironmentFile=/opt/employee-leave/backend.env`) and `employee-leave-web`
+(`npm start` in `frontend/`, port 3000); configure nginx to proxy `/api` to 8000
+and everything else to 3000, with TLS via certbot. In Hostinger DNS, point the
+`leavedemo.online` A record to `76.13.145.200`.
