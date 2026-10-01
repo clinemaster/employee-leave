@@ -406,3 +406,23 @@ a sampled PDF/document round-trips) — an untested backup is not a backup.
 Define and document retention (e.g. 30 daily + 12 monthly database backups)
 and an offsite/secondary-region copy so a single-site failure doesn't lose
 both primary and backup.
+
+## Automatic deploy to Hostinger (leavedemo.online)
+
+`.github/workflows/deploy-hostinger.yml` builds the frontend and uploads it to
+Hostinger over SSH on every push to `main` (or manually via *Run workflow*).
+
+Setup (GitHub → Settings → Secrets and variables → Actions):
+
+| Name | Type | Value |
+|---|---|---|
+| `HOSTINGER_HOST` | secret | SSH host/IP from hPanel → Advanced → SSH Access |
+| `HOSTINGER_PORT` | secret | SSH port (Hostinger default `65002`) |
+| `HOSTINGER_USER` | secret | SSH username |
+| `HOSTINGER_SSH_KEY` | secret | Private key whose public key is added in hPanel SSH Access |
+| `HOSTINGER_REMOTE_DIR` | secret | Target dir, e.g. `/home/<user>/domains/leavedemo.online/nodejs` |
+| `NEXT_PUBLIC_API_URL` | variable | Public URL of the backend API |
+
+The domain must be set up in hPanel as a Node.js web app (start command
+`npm start`) with SSH access enabled. The Django backend needs separate
+hosting (e.g. a VPS); shared hosting cannot run it.
