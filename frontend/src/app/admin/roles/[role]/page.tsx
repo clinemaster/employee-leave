@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useState } from "react";
 import { useRouter } from "next/navigation";
 import clsx from "clsx";
 import { AppShell } from "@/components/dashboard/AppShell";
@@ -47,14 +47,12 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ role
   const [updateRolePermissions, { isLoading: isSaving }] = useUpdateRolePermissionsMutation();
   const [deleteCustomRole, { isLoading: isDeleting }] = useDeleteCustomRoleMutation();
 
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selectedOverridesByRole, setSelectedOverridesByRole] = useState<Record<string, string[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set([CATEGORIES[0].title]));
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    if (data) setSelected(data.matrix[role] ?? []);
-  }, [data, role]);
+  const selected = selectedOverridesByRole[role] ?? (data?.matrix[role] ?? []);
 
   const isSystemAdmin = role === "SYSTEM_ADMIN";
   const roleDisplayName = data?.roles.find((r) => r.code === role)?.display_name ?? role;
@@ -73,7 +71,10 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ role
 
   function togglePermission(code: string) {
     setSaved(false);
-    setSelected((prev) => (prev.includes(code) ? prev.filter((p) => p !== code) : [...prev, code]));
+    setSelectedOverridesByRole((prev) => ({
+      ...prev,
+      [role]: selected.includes(code) ? selected.filter((p) => p !== code) : [...selected, code],
+    }));
   }
 
   async function handleSave() {

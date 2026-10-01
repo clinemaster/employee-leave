@@ -70,7 +70,9 @@ function resolvedParams(id: string) {
 function mockFetch(application: LeaveApplication) {
   global.fetch = jest.fn().mockImplementation((input: Request | string) => {
     const url = typeof input === "string" ? input : input.url;
-    if (url.includes("leave-applications/1/")) return Promise.resolve(jsonResponse(application));
+    // Match the detail URL exactly — sub-resources like
+    // leave-applications/1/audit-trail/ must fall through to the [] default.
+    if (/leave-applications\/1\/$/.test(url)) return Promise.resolve(jsonResponse(application));
     if (url.includes("notifications/")) return Promise.resolve(jsonResponse([]));
     return Promise.resolve(jsonResponse([]));
   }) as unknown as typeof fetch;
