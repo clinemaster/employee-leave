@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { useFieldArray } from "react-hook-form";
-import type { Control, UseFormRegister, UseFormWatch } from "react-hook-form";
+import { useFieldArray, useWatch } from "react-hook-form";
+import type { Control, UseFormRegister } from "react-hook-form";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { Card } from "@/components/ui/Card";
@@ -38,16 +38,15 @@ import {
 // of this shape (same nested schemas) — react-hook-form's own generics
 // don't compose cleanly across a parent form and an embedded step
 // component with a narrower field-values type, so the caller casts its
-// control/register/watch down to this shape at the call site.
+// control/register down to this shape at the call site.
 type FormValues = TravelPaymentFormValues;
 
 interface StepProps {
   control: Control<FormValues>;
   register: UseFormRegister<FormValues>;
-  watch: UseFormWatch<FormValues>;
 }
 
-export function TravelPaymentStep({ control, register, watch }: StepProps) {
+export function TravelPaymentStep({ control, register }: StepProps) {
   const { data: personTypes } = useGetPersonTypesQuery();
   const activePersonTypes = [...(personTypes ?? [])]
     .filter((pt) => pt.is_active)
@@ -65,9 +64,9 @@ export function TravelPaymentStep({ control, register, watch }: StepProps) {
   const taxiArray = useFieldArray({ control, name: "taxi_expenses" });
   const mizigoArray = useFieldArray({ control, name: "mizigo_items" });
 
-  const routes = watch("travel_routes");
-  const taxi = watch("taxi_expenses");
-  const mizigo = watch("mizigo_items");
+  const routes = useWatch({ control, name: "travel_routes" });
+  const taxi = useWatch({ control, name: "taxi_expenses" });
+  const mizigo = useWatch({ control, name: "mizigo_items" });
 
   const nauli = nauliTotal(routes ?? []);
   const taxiSum = taxiTotal(taxi ?? []);
@@ -131,7 +130,6 @@ export function TravelPaymentStep({ control, register, watch }: StepProps) {
             key={field.id}
             control={control}
             register={register}
-            watch={watch}
             routeIndex={index}
             onRemove={() => routesArray.remove(index)}
             personTypes={activePersonTypes}
@@ -200,7 +198,6 @@ function SummaryTile({ label, value, emphasize }: { label: string; value: number
 function RouteCard({
   control,
   register,
-  watch,
   routeIndex,
   onRemove,
   personTypes,
@@ -214,7 +211,7 @@ function RouteCard({
   lockTo: boolean;
 }) {
   const passengersArray = useFieldArray({ control, name: `travel_routes.${routeIndex}.passengers` });
-  const route = watch(`travel_routes.${routeIndex}`);
+  const route = useWatch({ control, name: `travel_routes.${routeIndex}` });
   const subtotal = route ? routeSubtotal(route) : 0;
 
   return (

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, useFieldArray } from "react-hook-form";
-import type { Control, UseFormRegister, UseFormWatch } from "react-hook-form";
+import { useForm, useFieldArray, useWatch } from "react-hook-form";
+import type { Control, UseFormRegister } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/Button";
@@ -89,7 +89,6 @@ export function LeaveApplicationForm() {
     register,
     control,
     handleSubmit,
-    watch,
     trigger,
     setValue,
     formState: { errors },
@@ -111,9 +110,13 @@ export function LeaveApplicationForm() {
   });
 
   const { fields, append, remove } = useFieldArray({ control, name: "dependants" });
-  const startDate = watch("start_date");
-  const lastDate = watch("last_date");
-  const travelAssistance = watch("travel_assistance");
+  const startDate = useWatch({ control, name: "start_date" });
+  const lastDate = useWatch({ control, name: "last_date" });
+  const travelAssistance = useWatch({ control, name: "travel_assistance" });
+  const leaveType = useWatch({ control, name: "leave_type" });
+  const travelRoutes = useWatch({ control, name: "travel_routes" });
+  const taxiExpenses = useWatch({ control, name: "taxi_expenses" });
+  const mizigoItems = useWatch({ control, name: "mizigo_items" });
   const clientPreviewDays = useMemo(() => previewWeekdayCount(startDate, lastDate), [startDate, lastDate]);
 
   async function goNext() {
@@ -320,7 +323,6 @@ export function LeaveApplicationForm() {
           <TravelPaymentStep
             control={control as unknown as Control<TravelPaymentFormValues>}
             register={register as unknown as UseFormRegister<TravelPaymentFormValues>}
-            watch={watch as unknown as UseFormWatch<TravelPaymentFormValues>}
           />
         )}
 
@@ -329,17 +331,17 @@ export function LeaveApplicationForm() {
             <h2 className="text-base font-semibold text-gray-900">Review &amp; Submit</h2>
             <ReviewRow
               label="Leave Type"
-              value={leaveTypes?.find((lt) => lt.id === Number(watch("leave_type")))?.name}
+              value={leaveTypes?.find((lt) => lt.id === Number(leaveType))?.name}
             />
             <ReviewRow label="Dates" value={`${startDate} to ${lastDate} (${clientPreviewDays} working days, preview)`} />
-            <ReviewRow label="Travel Assistance" value={watch("travel_assistance") ? "Requested" : "Not requested"} />
+            <ReviewRow label="Travel Assistance" value={travelAssistance ? "Requested" : "Not requested"} />
             <ReviewRow label="Dependants" value={String(fields.length)} />
             <div>
               <p className="mb-2 text-sm font-semibold text-gray-900">Travel Payment Request</p>
               <TravelPaymentPreview
-                routes={watch("travel_routes")}
-                taxi={watch("taxi_expenses")}
-                mizigo={watch("mizigo_items")}
+                routes={travelRoutes}
+                taxi={taxiExpenses}
+                mizigo={mizigoItems}
               />
             </div>
             {serverError ? <p className="text-sm text-red-600">{serverError}</p> : null}

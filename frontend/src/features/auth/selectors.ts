@@ -1,7 +1,7 @@
 import { createSelector } from "@reduxjs/toolkit";
 import type { RootState } from "@/store";
 import { getPermissions, type Permissions } from "@/lib/permissions";
-import { selectCurrentUser, selectCurrentUserRole } from "@/store/slices/authSlice";
+import { selectCurrentUser } from "@/store/slices/authSlice";
 import { allUserRoles, type Role } from "@/types";
 
 export { selectCurrentUser, selectCurrentUserRole, selectIsAuthenticated } from "@/store/slices/authSlice";

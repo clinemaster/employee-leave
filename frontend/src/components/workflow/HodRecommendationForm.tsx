@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
 import { Card, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -26,14 +26,14 @@ export function HodRecommendationForm({ applicationId }: { applicationId: number
 
   const {
     register,
+    control,
     handleSubmit,
-    watch,
     formState: { errors },
   } = useForm<HodRecommendationFormValues>({
     resolver: zodResolver(hodRecommendationSchema),
     defaultValues: { decision: true, comments: "", signature_name: "", signature_designation: "" },
   });
-  const decision = watch("decision");
+  const decision = useWatch({ control, name: "decision" });
 
   const {
     register: registerReturn,
