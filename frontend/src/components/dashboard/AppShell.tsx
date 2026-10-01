@@ -82,9 +82,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? [
         ...COMMON_PREFIX,
         ...dedupeByHref(allUserRoles(user).flatMap((r) => navByRole[r] ?? [])),
-        ...(allUserRoles(user).includes("SYSTEM_ADMIN")
-          ? [{ label: "Settings", href: "/settings" }]
-          : []),
       ]
     : [];
 

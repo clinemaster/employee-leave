@@ -1,5 +1,5 @@
 """
-TOTP MFA: setup / verify-setup / disable / login-verify, plus throttling.
+TOTP MFA: login challenge / login-verify, plus throttling.
 """
 import pyotp
 import pytest
@@ -13,7 +13,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture(autouse=True)
 def _reset_throttle_cache_before_each_test():
     """mfa_verify is throttled at 5/min (THROTTLE_RATE_MFA_VERIFY); several
-    tests in this module call verify-setup/login-verify a few times each,
+    tests in this module call login-verify a few times each,
     which would otherwise bleed across tests via the shared throttle cache
     and produce spurious 429s unrelated to what each test is checking."""
     from django.core.cache import cache
@@ -26,60 +26,17 @@ def _code_for(secret):
     return pyotp.totp.TOTP(secret).now()
 
 
-def test_setup_generates_valid_secret_and_uri(as_user, employee_user):
-    resp = as_user(employee_user).post('/api/auth/mfa/setup/')
-    assert resp.status_code == status.HTTP_200_OK, resp.data
-    assert 'secret' in resp.data
-    assert resp.data['provisioning_uri'].startswith('otpauth://totp/')
-    assert resp.data['secret'] in resp.data['provisioning_uri']
-
-    employee_user.refresh_from_db()
-    assert employee_user.mfa_enabled is False
-    assert employee_user.mfa_secret != ''
-    # never stored as plaintext
-    assert employee_user.mfa_secret != resp.data['secret']
-    assert mfa.decrypt_secret(employee_user.mfa_secret) == resp.data['secret']
-
-
-def test_verify_setup_with_correct_code_enables_mfa(as_user, employee_user):
-    client = as_user(employee_user)
-    setup_resp = client.post('/api/auth/mfa/setup/')
-    secret = setup_resp.data['secret']
-
-    resp = client.post('/api/auth/mfa/verify-setup/', {'code': _code_for(secret)}, format='json')
-    assert resp.status_code == status.HTTP_200_OK, resp.data
-    assert resp.data['mfa_enabled'] is True
-
-    employee_user.refresh_from_db()
-    assert employee_user.mfa_enabled is True
-
-
-def test_verify_setup_with_wrong_code_fails_and_does_not_enable(as_user, employee_user):
-    client = as_user(employee_user)
-    client.post('/api/auth/mfa/setup/')
-
-    resp = client.post('/api/auth/mfa/verify-setup/', {'code': '000000'}, format='json')
-    assert resp.status_code == status.HTTP_400_BAD_REQUEST
-
-    employee_user.refresh_from_db()
-    assert employee_user.mfa_enabled is False
-
-
-def test_verify_setup_without_prior_setup_fails(as_user, employee_user):
-    resp = as_user(employee_user).post('/api/auth/mfa/verify-setup/', {'code': '123456'}, format='json')
-    assert resp.status_code == status.HTTP_400_BAD_REQUEST
-
-
-def _enable_mfa(secret_holder_client):
-    setup_resp = secret_holder_client.post('/api/auth/mfa/setup/')
-    secret = setup_resp.data['secret']
-    verify_resp = secret_holder_client.post('/api/auth/mfa/verify-setup/', {'code': _code_for(secret)}, format='json')
-    assert verify_resp.status_code == status.HTTP_200_OK
+def _enable_mfa(user):
+    """Turns MFA on directly in the DB (there is no setup endpoint)."""
+    secret = mfa.generate_secret()
+    user.mfa_secret = mfa.encrypt_secret(secret)
+    user.mfa_enabled = True
+    user.save(update_fields=['mfa_secret', 'mfa_enabled'])
     return secret
 
 
-def test_login_with_mfa_enabled_requires_second_step(as_user, api_client, employee_user):
-    _enable_mfa(as_user(employee_user))
+def test_login_with_mfa_enabled_requires_second_step(api_client, employee_user):
+    _enable_mfa(employee_user)
 
     resp = api_client.post('/api/auth/login/', {'username': employee_user.username, 'password': 'TestPass123!'}, format='json')
     assert resp.status_code == status.HTTP_200_OK
@@ -89,8 +46,8 @@ def test_login_with_mfa_enabled_requires_second_step(as_user, api_client, employ
     assert 'refresh' not in resp.data
 
 
-def test_login_verify_with_correct_code_succeeds(as_user, api_client, employee_user):
-    secret = _enable_mfa(as_user(employee_user))
+def test_login_verify_with_correct_code_succeeds(api_client, employee_user):
+    secret = _enable_mfa(employee_user)
 
     login_resp = api_client.post('/api/auth/login/', {'username': employee_user.username, 'password': 'TestPass123!'}, format='json')
     mfa_token = login_resp.data['mfa_token']
@@ -102,8 +59,8 @@ def test_login_verify_with_correct_code_succeeds(as_user, api_client, employee_u
     assert resp.data['user']['username'] == employee_user.username
 
 
-def test_login_verify_with_incorrect_code_fails(as_user, api_client, employee_user):
-    _enable_mfa(as_user(employee_user))
+def test_login_verify_with_incorrect_code_fails(api_client, employee_user):
+    _enable_mfa(employee_user)
 
     login_resp = api_client.post('/api/auth/login/', {'username': employee_user.username, 'password': 'TestPass123!'}, format='json')
     mfa_token = login_resp.data['mfa_token']
@@ -112,8 +69,8 @@ def test_login_verify_with_incorrect_code_fails(as_user, api_client, employee_us
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
-def test_login_verify_replayed_code_fails(as_user, api_client, employee_user):
-    secret = _enable_mfa(as_user(employee_user))
+def test_login_verify_replayed_code_fails(api_client, employee_user):
+    secret = _enable_mfa(employee_user)
 
     login_resp = api_client.post('/api/auth/login/', {'username': employee_user.username, 'password': 'TestPass123!'}, format='json')
     mfa_token = login_resp.data['mfa_token']
@@ -132,41 +89,6 @@ def test_login_verify_replayed_code_fails(as_user, api_client, employee_user):
 def test_login_verify_with_invalid_token_fails(api_client):
     resp = api_client.post('/api/auth/mfa/login-verify/', {'mfa_token': 'not-a-real-token', 'code': '123456'}, format='json')
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
-
-
-def test_disable_requires_correct_password(as_user, employee_user):
-    client = as_user(employee_user)
-    _enable_mfa(client)
-
-    resp = client.post('/api/auth/mfa/disable/', {'password': 'wrong-password'}, format='json')
-    assert resp.status_code == status.HTTP_400_BAD_REQUEST
-    employee_user.refresh_from_db()
-    assert employee_user.mfa_enabled is True
-
-    resp = client.post('/api/auth/mfa/disable/', {'password': 'TestPass123!'}, format='json')
-    assert resp.status_code == status.HTTP_200_OK
-    employee_user.refresh_from_db()
-    assert employee_user.mfa_enabled is False
-    assert employee_user.mfa_secret == ''
-
-
-def test_mfa_endpoints_are_self_service_only(as_user, employee_user, other_employee_user):
-    """Setup/verify/disable always act on request.user — there is no way
-    to target another user's account via these endpoints (no user-id param
-    accepted anywhere in the request body)."""
-    client = as_user(employee_user)
-    resp = client.post('/api/auth/mfa/setup/', {'user': other_employee_user.id}, format='json')
-    assert resp.status_code == status.HTTP_200_OK
-
-    employee_user.refresh_from_db()
-    other_employee_user.refresh_from_db()
-    assert employee_user.mfa_secret != ''
-    assert other_employee_user.mfa_secret == ''
-
-
-def test_setup_requires_authentication(api_client):
-    resp = api_client.post('/api/auth/mfa/setup/')
-    assert resp.status_code == status.HTTP_401_UNAUTHORIZED
 
 
 def _reset_throttle_cache():
@@ -192,20 +114,8 @@ def _low_mfa_verify_rate(settings):
     _reset_throttle_cache()
 
 
-def test_verify_setup_throttles_after_repeated_bad_codes(as_user, employee_user, _low_mfa_verify_rate):
-    client = as_user(employee_user)
-    client.post('/api/auth/mfa/setup/')
-
-    statuses = []
-    for _ in range(5):
-        resp = client.post('/api/auth/mfa/verify-setup/', {'code': '000000'}, format='json')
-        statuses.append(resp.status_code)
-
-    assert status.HTTP_429_TOO_MANY_REQUESTS in statuses
-
-
-def test_login_verify_throttles_after_repeated_bad_codes(as_user, api_client, employee_user, _low_mfa_verify_rate):
-    secret = _enable_mfa(as_user(employee_user))
+def test_login_verify_throttles_after_repeated_bad_codes(api_client, employee_user, _low_mfa_verify_rate):
+    secret = _enable_mfa(employee_user)
     login_resp = api_client.post('/api/auth/login/', {'username': employee_user.username, 'password': 'TestPass123!'}, format='json')
     mfa_token = login_resp.data['mfa_token']
 

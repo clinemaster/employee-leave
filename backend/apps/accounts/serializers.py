@@ -308,14 +308,6 @@ class CustomRoleSerializer(serializers.ModelSerializer):
 
 # --- MFA request bodies (apps.accounts.mfa_views) -----------------------
 
-class MfaVerifySetupSerializer(serializers.Serializer):
-    code = serializers.CharField(max_length=8, min_length=6)
-
-
-class MfaDisableSerializer(serializers.Serializer):
-    password = serializers.CharField()
-
-
 class MfaLoginVerifySerializer(serializers.Serializer):
     mfa_token = serializers.CharField()
     code = serializers.CharField(max_length=8, min_length=6)
@@ -323,11 +315,6 @@ class MfaLoginVerifySerializer(serializers.Serializer):
 
 # --- MFA / auth response shapes (documentation only — never used to parse
 # incoming data, only to describe outgoing shapes for the OpenAPI schema) --
-
-class MfaSetupResponseSerializer(serializers.Serializer):
-    secret = serializers.CharField()
-    provisioning_uri = serializers.CharField()
-
 
 class TokenPairResponseSerializer(serializers.Serializer):
     access = serializers.CharField()

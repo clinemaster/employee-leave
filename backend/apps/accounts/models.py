@@ -251,14 +251,12 @@ class User(AbstractUser):
     # --- MFA (TOTP, opt-in per user) ---------------------------------
     # `mfa_secret` holds the Fernet-encrypted base32 TOTP secret (see
     # apps.accounts.mfa) — never plaintext at rest, and never serialized to
-    # the API in either form (see serializers.UserSerializer). It is
-    # populated by /api/auth/mfa/setup/ but `mfa_enabled` only flips to True
-    # once the user proves possession of the authenticator via
-    # /api/auth/mfa/verify-setup/.
+    # the API in either form (see serializers.UserSerializer). There is no
+    # API endpoint to set it; it can only be set via Django admin/shell.
     mfa_secret = models.CharField(max_length=255, blank=True, default='')
     mfa_enabled = models.BooleanField(default=False)
     # Replay protection: the last TOTP step number successfully consumed
-    # (setup-verify or login-verify), so the same 6-digit code can't be
+    # (login-verify), so the same 6-digit code can't be
     # reused within its validity window.
     mfa_last_verified_step = models.BigIntegerField(null=True, blank=True)
 

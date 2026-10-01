@@ -21,7 +21,6 @@ def test_schema_generates_without_warnings_or_errors():
     # fixes to appear at all — assert they're still present.
     paths = schema['paths']
     assert '/api/auth/login/' in paths
-    assert '/api/auth/mfa/setup/' in paths
     assert '/api/auth/mfa/login-verify/' in paths
     assert '/api/dashboard-stats/' in paths
     assert '/api/reports/leave-applications/' in paths

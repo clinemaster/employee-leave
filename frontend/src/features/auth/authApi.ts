@@ -34,11 +34,6 @@ interface MfaLoginVerifyRequest {
   code: string;
 }
 
-interface MfaSetupResponse {
-  secret: string;
-  provisioning_uri: string;
-}
-
 export const authApi = baseApi.injectEndpoints({
   endpoints: (builder) => ({
     login: builder.mutation<LoginResponse, LoginRequest>({
@@ -57,17 +52,6 @@ export const authApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Me"],
     }),
-    mfaSetup: builder.mutation<MfaSetupResponse, void>({
-      query: () => ({ url: "auth/mfa/setup/", method: "POST" }),
-    }),
-    mfaVerifySetup: builder.mutation<User, { code: string }>({
-      query: (body) => ({ url: "auth/mfa/verify-setup/", method: "POST", body }),
-      invalidatesTags: ["Me"],
-    }),
-    mfaDisable: builder.mutation<User, { password: string }>({
-      query: (body) => ({ url: "auth/mfa/disable/", method: "POST", body }),
-      invalidatesTags: ["Me"],
-    }),
     me: builder.query<User, void>({
       query: () => "users/me/",
       providesTags: ["Me"],
@@ -78,8 +62,5 @@ export const authApi = baseApi.injectEndpoints({
 export const {
   useLoginMutation,
   useMfaLoginVerifyMutation,
-  useMfaSetupMutation,
-  useMfaVerifySetupMutation,
-  useMfaDisableMutation,
   useMeQuery,
 } = authApi;

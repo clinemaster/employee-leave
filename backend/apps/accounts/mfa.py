@@ -22,9 +22,6 @@ import pyotp
 from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 
-ISSUER_NAME = 'NAOT Leave Management'
-
-
 def _fernet() -> Fernet:
     # Derive a 32-byte, url-safe-base64 key from SECRET_KEY (never store the
     # raw Django SECRET_KEY itself as a Fernet key — SHA-256 it first).
@@ -49,20 +46,6 @@ def decrypt_secret(encrypted_secret: str) -> str | None:
         return _fernet().decrypt(encrypted_secret.encode('utf-8')).decode('utf-8')
     except InvalidToken:
         return None
-
-
-def provisioning_uri(plain_secret: str, username: str) -> str:
-    """otpauth:// URI for QR-code display in an authenticator app."""
-    return pyotp.totp.TOTP(plain_secret).provisioning_uri(name=username, issuer_name=ISSUER_NAME)
-
-
-def verify_code(plain_secret: str, code: str) -> bool:
-    if not plain_secret or not code:
-        return False
-    totp = pyotp.totp.TOTP(plain_secret)
-    # valid_window=1 tolerates minor clock drift (accepts the previous/next
-    # 30s step in addition to the current one), matching common TOTP UX.
-    return totp.verify(code, valid_window=1)
 
 
 def verify_code_no_replay(plain_secret: str, code: str, last_step):
